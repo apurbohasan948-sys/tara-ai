@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TARA Companion Robot - Web Configuration</title>
+  <link rel="stylesheet" href="tara.css">
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <div class="logo-badge">TARA</div>
+      <span>ESP32 Physical Companion</span>
+    </div>
+    <div class="header-status">
+      <span class="pulse-dot"></span>
+      <span id="connStatus">ONLINE</span>
+    </div>
+  </header>
+
+  <nav class="nav-bar">
+    <button class="nav-item active" data-tab="dashboard">Dashboard</button>
+    <button class="nav-item" data-tab="wifi">Wi-Fi</button>
+    <button class="nav-item" data-tab="brain">Brain</button>
+    <button class="nav-item" data-tab="voice">Voice</button>
+    <button class="nav-item" data-tab="personality">Personality</button>
+    <button class="nav-item" data-tab="memory">Memory</button>
+    <button class="nav-item" data-tab="face">Face</button>
+    <button class="nav-item" data-tab="hardware">Hardware</button>
+    <button class="nav-item" data-tab="cloud">Cloud</button>
+    <button class="nav-item" data-tab="system">System</button>
+    <button class="nav-item" data-tab="ota">OTA</button>
+  </nav>
+
+  <main class="container">
+    <!-- Dynamic tab content injected by tara.js -->
+    <section id="contentArea"></section>
+  </main>
+
+  <script src="tara.js"></script>
+</body>
+</html>

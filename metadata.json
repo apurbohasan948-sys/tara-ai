@@ -1,0 +1,6 @@
+{
+  "name": "TARA ESP32 AI Companion Robot",
+  "description": "Modular AI companion robot framework for standard ESP32 featuring Wi-Fi AP provisioning, local web configuration, expressive OLED face animations, and cloud brain integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
