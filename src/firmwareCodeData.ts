@@ -1,7 +1,7 @@
 export interface FirmwareFile {
   path: string;
   name: string;
-  category: 'Core' | 'Wi-Fi' | 'Brain' | 'Voice' | 'Face' | 'Hardware' | 'Memory' | 'Web' | 'Storage' | 'OTA' | 'Config';
+  category: 'Core' | 'Security' | 'Wi-Fi' | 'Brain' | 'Voice' | 'Face' | 'Hardware' | 'Memory' | 'Web' | 'Storage' | 'OTA' | 'Config' | 'Simulation';
   description: string;
   code: string;
 }
@@ -349,6 +349,175 @@ public:
     void handlePostBrain();
     void handlePostRestart();
     void handlePostReset();
+};
+
+#endif`
+  },
+  {
+    path: 'src/security/AuthManager.h',
+    name: 'AuthManager.h',
+    category: 'Security',
+    description: 'Constant-time SHA256 device authentication, salts, and session tokens',
+    code: `#ifndef TARA_AUTHMANAGER_H
+#define TARA_AUTHMANAGER_H
+
+#include <Arduino.h>
+#include <Preferences.h>
+
+#define TARA_SESSION_TIMEOUT_SEC 3600
+#define TARA_MAX_SESSIONS 4
+#define TARA_MAX_FAILURES 5
+#define TARA_LOCKOUT_SEC 30
+
+struct TaraSession {
+    char token[33];
+    uint32_t expiresAt;
+    bool active;
+};
+
+class AuthManager {
+public:
+    AuthManager();
+    bool begin();
+    bool verifyPassword(const String& inputPassword);
+    bool setDevicePassword(const String& newPassword);
+    bool isPasswordSet() const;
+    String createSession();
+    bool validateToken(const String& token);
+    void invalidateSession(const String& token);
+    bool isLockedOut() const;
+    uint32_t getRemainingLockoutSeconds() const;
+};
+
+#endif`
+  },
+  {
+    path: 'src/security/EndpointValidator.h',
+    name: 'EndpointValidator.h',
+    category: 'Security',
+    description: 'SSRF protection, strict TLS enforcement, and provider endpoint validation',
+    code: `#ifndef TARA_ENDPOINTVALIDATOR_H
+#define TARA_ENDPOINTVALIDATOR_H
+
+#include <Arduino.h>
+#include "../core/TaraConfig.h"
+
+enum class ModelProviderType {
+    OPENAI,
+    GEMINI,
+    DEEPSEEK,
+    LOCAL_OLLAMA,
+    CUSTOM
+};
+
+struct EndpointValidationResult {
+    bool valid;
+    String sanitizedUrl;
+    String rejectionReason;
+};
+
+class EndpointValidator {
+public:
+    static EndpointValidationResult validate(ModelProviderType provider, const String& url, bool allowCustom = false);
+    static bool isPrivateOrLoopbackHost(const String& host);
+    static bool isHttps(const String& url);
+    static String extractHost(const String& url);
+};
+
+#endif`
+  },
+  {
+    path: 'src/security/TLSCertStore.h',
+    name: 'TLSCertStore.h',
+    category: 'Security',
+    description: 'Trusted CA root certificates (ISRG Root X1, GTS Root R1) for strict TLS',
+    code: `#ifndef TARA_TLSCERTSTORE_H
+#define TARA_TLSCERTSTORE_H
+
+#include <Arduino.h>
+#include <WiFiClientSecure.h>
+
+class TLSCertStore {
+public:
+    static const char* getISRGRootX1();
+    static const char* getGTSRootR1();
+    static bool applyTrust(WiFiClientSecure* client, const String& host);
+};
+
+#endif`
+  },
+  {
+    path: 'src/hardware/interfaces/HardwareInterfaces.h',
+    name: 'HardwareInterfaces.h',
+    category: 'Hardware',
+    description: 'Decoupled abstract interfaces for Display, Audio, LEDs, and Sensors',
+    code: `#ifndef TARA_HARDWAREINTERFACES_H
+#define TARA_HARDWAREINTERFACES_H
+
+#include <Arduino.h>
+#include "../../../include/TaraCommon.h"
+
+class IDisplayDriver {
+public:
+    virtual ~IDisplayDriver() = default;
+    virtual bool begin() = 0;
+    virtual void clear() = 0;
+    virtual void display() = 0;
+    virtual void drawBitmap(int16_t x, int16_t y, const uint8_t* bitmap, int16_t w, int16_t h) = 0;
+    virtual void drawEye(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, bool filled) = 0;
+};
+
+class IMicrophone {
+public:
+    virtual ~IMicrophone() = default;
+    virtual bool begin(uint32_t sampleRate = 16000) = 0;
+    virtual int readSamples(int16_t* buffer, size_t maxSamples) = 0;
+    virtual bool isAudioDetected(int16_t threshold) = 0;
+};
+
+class ISpeaker {
+public:
+    virtual ~ISpeaker() = default;
+    virtual bool begin(uint32_t sampleRate = 16000) = 0;
+    virtual int writeSamples(const int16_t* buffer, size_t samples) = 0;
+    virtual void playTone(uint16_t freqHz, uint16_t durationMs) = 0;
+    virtual void setVolume(uint8_t volPercent) = 0;
+};
+
+#endif`
+  },
+  {
+    path: 'src/hardware/mock/MockHardware.h',
+    name: 'MockHardware.h',
+    category: 'Simulation',
+    description: 'Hardware-free mock drivers for standard ESP32 development',
+    code: `#ifndef TARA_MOCKHARDWARE_H
+#define TARA_MOCKHARDWARE_H
+
+#include "../interfaces/HardwareInterfaces.h"
+
+class MockDisplayDriver : public IDisplayDriver {
+public:
+    bool begin() override;
+    void clear() override;
+    void display() override;
+    void drawBitmap(int16_t x, int16_t y, const uint8_t* bitmap, int16_t w, int16_t h) override;
+    void drawEye(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, bool filled) override;
+};
+
+class MockMicrophone : public IMicrophone {
+public:
+    bool begin(uint32_t sampleRate = 16000) override;
+    int readSamples(int16_t* buffer, size_t maxSamples) override;
+    bool isAudioDetected(int16_t threshold) override;
+};
+
+class MockSpeaker : public ISpeaker {
+public:
+    bool begin(uint32_t sampleRate = 16000) override;
+    int writeSamples(const int16_t* buffer, size_t samples) override;
+    void playTone(uint16_t freqHz, uint16_t durationMs) override;
+    void setVolume(uint8_t volPercent) override;
 };
 
 #endif`

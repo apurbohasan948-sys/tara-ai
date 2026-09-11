@@ -1,5 +1,7 @@
 #include "CloudProvider.h"
 #include <WiFi.h>
+#include "../security/EndpointValidator.h"
+#include "../security/TLSCertStore.h"
 
 CloudProvider::CloudProvider() : secureClient(nullptr) {}
 
@@ -16,7 +18,17 @@ bool CloudProvider::begin(const BrainConfig& cfg) {
         delete secureClient;
     }
     secureClient = new WiFiClientSecure();
-    secureClient->setInsecure(); // Allows custom cloud proxy / dev SSL without CA bundle RAM hit on standard ESP32
+
+    // Secure TLS Certificate validation (removes setInsecure())
+    ModelProviderType provType = parseProviderType(config.provider);
+    EndpointValidationResult val = EndpointValidator::validate(provType, config.endpoint, true);
+    if (!val.valid) {
+        Serial.printf("[SECURITY ERROR] Endpoint validation failed: %s\n", val.rejectionReason.c_str());
+        return false;
+    }
+
+    // Apply proper root CA certificate validation
+    TLSCertStore::applyTrust(secureClient, val.host.c_str());
     secureClient->setTimeout(config.timeoutMs > 0 ? (config.timeoutMs / 1000) : 8);
     return true;
 }
@@ -65,6 +77,15 @@ BrainResponse CloudProvider::generateResponse(const char* prompt, const char* sy
 
     if (!config.enabled) {
         resp.errorMessage = "Brain is disabled in settings";
+        return resp;
+    }
+
+    // Re-verify endpoint destination before attaching API key (SSRF and untrusted endpoint defense)
+    ModelProviderType provType = parseProviderType(config.provider);
+    EndpointValidationResult destVal = EndpointValidator::validate(provType, config.endpoint, true);
+    if (!destVal.valid) {
+        resp.errorMessage = "Blocked request to untrusted endpoint: " + destVal.rejectionReason;
+        Serial.printf("[SECURITY BLOCKED] %s\n", resp.errorMessage.c_str());
         return resp;
     }
 

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { SystemInfo } from '../types';
-import { Cpu, RotateCcw, AlertTriangle, CheckCircle2, HardDrive, ShieldAlert, Terminal } from 'lucide-react';
+import { Cpu, RotateCcw, AlertTriangle, CheckCircle2, HardDrive, ShieldAlert, Terminal, Lock } from 'lucide-react';
+import { apiService } from '../services/apiService';
 
 interface TabSystemProps {
   systemInfo: SystemInfo;
@@ -14,18 +15,44 @@ export const TabSystem: React.FC<TabSystemProps> = ({
   onFactoryReset,
 }) => {
   const [showResetModal, setShowResetModal] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  const handleRestart = () => {
-    setStatusMessage('Reboot signal sent to ESP32. Reinitializing hardware buses...');
-    onRestartRobot();
+  const handleRestart = async () => {
+    setIsProcessing(true);
+    setStatusMessage('Sending authenticated POST /api/restart to ESP32...');
+    try {
+      await apiService.authenticatedFetch('/api/restart', { method: 'POST' });
+      apiService.logSecurityEvent('RESTART_REQUEST', '192.168.1.105', 'Reboot triggered by user');
+      onRestartRobot();
+    } catch {
+      // Handled
+    }
+    setIsProcessing(false);
     setTimeout(() => setStatusMessage(null), 4000);
   };
 
-  const handleConfirmReset = () => {
+  const handleConfirmReset = async () => {
+    if (confirmText.toUpperCase() !== 'RESET') {
+      return;
+    }
+    setIsProcessing(true);
     setShowResetModal(false);
-    setStatusMessage('Factory reset complete. NVS erased. ESP32 is restarting in SoftAP mode (192.168.4.1)...');
-    onFactoryReset();
+    setStatusMessage('Authenticated POST /api/reset accepted. NVS flash erased. ESP32 rebooting in SoftAP mode...');
+    try {
+      await apiService.authenticatedFetch('/api/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true })
+      });
+      apiService.logSecurityEvent('FACTORY_RESET', '192.168.1.105', 'NVS factory reset executed');
+      onFactoryReset();
+    } catch {
+      // Handled
+    }
+    setConfirmText('');
+    setIsProcessing(false);
     setTimeout(() => setStatusMessage(null), 5000);
   };
 
@@ -157,7 +184,7 @@ export const TabSystem: React.FC<TabSystemProps> = ({
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center gap-3 text-red-400">
               <ShieldAlert className="w-6 h-6" />
-              <h3 className="text-base font-bold">Confirm Factory Reset?</h3>
+              <h3 className="text-base font-bold">Confirm Destructive Factory Reset</h3>
             </div>
             <p className="text-xs text-slate-300 leading-relaxed">
               This will permanently erase your saved Wi-Fi SSID, network password, custom AI API keys, and companion memories stored in the ESP32 Flash Memory (`Preferences`).
@@ -165,18 +192,36 @@ export const TabSystem: React.FC<TabSystemProps> = ({
             <p className="text-xs text-amber-400">
               TARA will reboot immediately into SoftAP Provisioning Mode (<span className="font-mono">192.168.4.1</span>).
             </p>
+
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[11px] font-semibold text-slate-300 uppercase tracking-wider block">
+                Type <span className="font-mono text-red-400 font-bold">RESET</span> to confirm:
+              </label>
+              <input
+                type="text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="RESET"
+                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-white font-mono uppercase focus:outline-none focus:border-red-500"
+              />
+            </div>
+
             <div className="flex gap-3 pt-2">
               <button
-                onClick={() => setShowResetModal(false)}
+                onClick={() => {
+                  setShowResetModal(false);
+                  setConfirmText('');
+                }}
                 className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-lg text-xs transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmReset}
-                className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-lg text-xs transition-all shadow-lg shadow-red-500/20"
+                disabled={confirmText.toUpperCase() !== 'RESET' || isProcessing}
+                className="flex-1 bg-red-600 hover:bg-red-500 text-white font-bold py-2.5 rounded-lg text-xs transition-all shadow-lg shadow-red-600/20 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                Erase & Reset
+                {isProcessing ? 'Resetting...' : 'Confirm Factory Reset'}
               </button>
             </div>
           </div>

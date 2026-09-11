@@ -27,21 +27,51 @@ interface TabDashboardProps {
   emotion: RobotEmotion;
   wifiInfo: WiFiInfo;
   systemInfo: SystemInfo;
-  voiceSettings: VoiceSettings;
-  brainSettings: BrainSettings;
-  onSetState: (st: RobotState) => void;
-  onSetEmotion: (em: RobotEmotion) => void;
+  voiceSettings?: VoiceSettings;
+  brainSettings?: BrainSettings;
+  onSetState?: (st: RobotState) => void;
+  onSetEmotion?: (em: RobotEmotion) => void;
+  onNavigateTab?: (tab: any) => void;
+  onTriggerSpeech?: (text: string) => void;
+  onTriggerListen?: () => void;
 }
+
+const defaultVoiceSettings: VoiceSettings = {
+  volume: 80,
+  ttsLanguage: 'en',
+  sampleRate: 16000,
+  ttsEndpoint: 'https://translate.google.com/translate_tts',
+  micEnabled: true,
+  speakerEnabled: true,
+};
+
+const defaultBrainSettings: BrainSettings = {
+  provider: 'cloud',
+  providerType: 'openai',
+  endpoint: 'https://api.openai.com/v1/chat/completions',
+  apiKey: '',
+  hasKey: true,
+  allowCustom: false,
+  model: 'gpt-4o-mini',
+  temperature: 0.7,
+  maxTokens: 256,
+  timeoutMs: 10000,
+  streaming: false,
+  enabled: true,
+};
 
 export const TabDashboard: React.FC<TabDashboardProps> = ({
   robotState,
   emotion,
   wifiInfo,
   systemInfo,
-  voiceSettings,
-  brainSettings,
+  voiceSettings = defaultVoiceSettings,
+  brainSettings = defaultBrainSettings,
   onSetState,
   onSetEmotion,
+  onNavigateTab,
+  onTriggerSpeech,
+  onTriggerListen,
 }) => {
   const formatUptime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -144,7 +174,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             </div>
             <div className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              {voiceSettings.micEnabled ? 'INMP441 I2S' : 'Disabled'}
+              {(voiceSettings?.micEnabled ?? true) ? 'INMP441 I2S' : 'Disabled'}
             </div>
             <div className="text-[10px] text-slate-500 mt-1 font-mono">GPIO 34 (DIN)</div>
           </div>
@@ -158,7 +188,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
               MAX98357A
             </div>
-            <div className="text-[10px] text-slate-500 mt-1 font-mono">Vol: {voiceSettings.volume}%</div>
+            <div className="text-[10px] text-slate-500 mt-1 font-mono">Vol: {voiceSettings?.volume ?? 80}%</div>
           </div>
 
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-3">
@@ -188,10 +218,10 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             </div>
             <div className="text-xs font-semibold text-emerald-400 flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              {brainSettings.provider === 'cloud' ? 'Cloud LLM' : 'Local Ollama'}
+              {brainSettings?.provider === 'cloud' ? 'Cloud LLM' : 'Local Ollama'}
             </div>
             <div className="text-[10px] text-slate-500 mt-1 truncate font-mono">
-              {brainSettings.model}
+              {brainSettings?.model ?? 'gpt-4o-mini'}
             </div>
           </div>
 
@@ -264,7 +294,7 @@ export const TabDashboard: React.FC<TabDashboardProps> = ({
             ).map((em) => (
               <button
                 key={em}
-                onClick={() => onSetEmotion(em)}
+                onClick={() => onSetEmotion?.(em)}
                 className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
                   emotion === em
                     ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/30'

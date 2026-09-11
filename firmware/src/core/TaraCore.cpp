@@ -9,6 +9,8 @@
 #include "../personality/PersonalityManager.h"
 #include "../emotion/EmotionManager.h"
 #include "../ota/OTAManager.h"
+#include "../security/AuthManager.h"
+#include "../security/SecurityLogger.h"
 #include "../hardware/DisplayDriver.h"
 #include "../hardware/AudioHardware.h"
 #include "../hardware/LEDController.h"
@@ -37,7 +39,9 @@ TaraCore::TaraCore()
       memory(nullptr),
       personality(nullptr),
       emotion(nullptr),
-      ota(nullptr) {}
+      ota(nullptr),
+      auth(nullptr),
+      securityLogger(nullptr) {}
 
 TaraCore::~TaraCore() {
     if (webServer) delete webServer;
@@ -49,6 +53,8 @@ TaraCore::~TaraCore() {
     if (emotion) delete emotion;
     if (face) delete face;
     if (ota) delete ota;
+    if (auth) delete auth;
+    if (securityLogger) delete securityLogger;
     if (storage) delete storage;
 }
 
@@ -64,6 +70,11 @@ bool TaraCore::begin() {
     // 1. Storage Manager (NVS Preferences)
     storage = new StorageManager();
     storage->begin();
+
+    // 1b. Security Layer (Device Authentication & Event Logging)
+    securityLogger = new SecurityLogger();
+    auth = new AuthManager();
+    auth->begin();
 
     // 2. Hardware Drivers
     sDisplayDriver.begin();

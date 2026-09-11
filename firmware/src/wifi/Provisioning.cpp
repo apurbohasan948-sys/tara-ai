@@ -1,6 +1,8 @@
 #include "Provisioning.h"
 #include "../storage/StorageManager.h"
 #include <esp_wifi.h>
+#include <esp_system.h>
+#include <Preferences.h>
 
 Provisioning::Provisioning(StorageManager* storageMgr) 
     : storage(storageMgr), apActive(false), apIP(192, 168, 4, 1) {}
@@ -13,11 +15,42 @@ String Provisioning::generateDefaultSSID() {
     return String(buf);
 }
 
-bool Provisioning::startAP(const char* customSSID, const char* password) {
+String Provisioning::generateSecurePassphrase() {
+    // Read or generate a secure, non-predictable 10-char WPA2 passphrase
+    Preferences prefs;
+    prefs.begin("tara_sec", false);
+    String pass = prefs.getString("ap_pass", "");
+    if (pass.length() >= 8) {
+        prefs.end();
+        return pass;
+    }
+
+    // Generate random alphanumeric passphrase (using hardware RNG)
+    const char charset[] = "abcdefghjkmnpqrstuvwxyz23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+    char gen[11];
+    for (int i = 0; i < 10; i++) {
+        uint32_t r = esp_random() % (sizeof(charset) - 1);
+        gen[i] = charset[r];
+    }
+    gen[10] = '\0';
+    pass = String(gen);
+
+    prefs.putString("ap_pass", pass);
+    prefs.end();
+    return pass;
+}
+
+bool Provisioning::startAP(const char* customSSID, const char* customPass) {
     if (customSSID && strlen(customSSID) > 0) {
         currentAPSSID = String(customSSID);
     } else {
         currentAPSSID = generateDefaultSSID();
+    }
+
+    if (customPass && strlen(customPass) >= 8) {
+        currentAPPass = String(customPass);
+    } else {
+        currentAPPass = generateSecurePassphrase();
     }
 
     WiFi.disconnect(true);
@@ -28,18 +61,17 @@ bool Provisioning::startAP(const char* customSSID, const char* password) {
     IPAddress subnet(255, 255, 255, 0);
     WiFi.softAPConfig(apIP, gateway, subnet);
 
-    bool ok;
-    if (password && strlen(password) >= 8) {
-        ok = WiFi.softAP(currentAPSSID.c_str(), password);
-    } else {
-        ok = WiFi.softAP(currentAPSSID.c_str()); // Open network for easy initial setup
-    }
+    // Strictly enforce WPA2 passphrase - never start an open unencrypted network!
+    bool ok = WiFi.softAP(currentAPSSID.c_str(), currentAPPass.c_str(), 1, 0, 4); // WPA2-PSK
 
     if (ok) {
         apActive = true;
-        Serial.printf("[Provisioning] AP started: %s (IP: %s)\n",
-                      currentAPSSID.c_str(),
-                      WiFi.softAPIP().toString().c_str());
+        Serial.println("=================================================");
+        Serial.printf("[Provisioning] WPA2 Secure AP Started: %s\n", currentAPSSID.c_str());
+        Serial.printf("[Provisioning] AP Password: %s\n", currentAPPass.c_str());
+        Serial.printf("[Provisioning] Setup URL: http://%s\n", WiFi.softAPIP().toString().c_str());
+        Serial.println("[Provisioning] (Credentials displayed locally on robot screen)");
+        Serial.println("=================================================");
     } else {
         Serial.println("[Provisioning] Failed to start SoftAP!");
     }

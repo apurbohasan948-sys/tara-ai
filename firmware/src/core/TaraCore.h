@@ -17,6 +17,8 @@ class MemoryManager;
 class PersonalityManager;
 class EmotionManager;
 class OTAManager;
+class AuthManager;
+class SecurityLogger;
 
 class TaraCore {
 public:
@@ -43,6 +45,8 @@ public:
     PersonalityManager* getPersonality() { return personality; }
     EmotionManager* getEmotion() { return emotion; }
     OTAManager* getOTA() { return ota; }
+    AuthManager* getAuth() { return auth; }
+    SecurityLogger* getSecurityLogger() { return securityLogger; }
 
 private:
     RobotState currentState;
@@ -60,6 +64,8 @@ private:
     PersonalityManager* personality;
     EmotionManager* emotion;
     OTAManager* ota;
+    AuthManager* auth;
+    SecurityLogger* securityLogger;
 
     void handleAutonomousBehaviors();
 };
