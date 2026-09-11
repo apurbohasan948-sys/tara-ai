@@ -4,8 +4,9 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Bot, User, Sparkles, Mic, MicOff, Volume2, CornerDownLeft } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Mic, MicOff, Volume2, Heart, Clock, Search, Music, Utensils, Music2 } from 'lucide-react';
 import { apiService, ChatMessage } from '../services/apiService';
+import { personalityEngine } from '../services/PersonalityEngine';
 import { voiceManager } from '../services/VoiceManager';
 
 export const AiChatCompanion: React.FC = () => {
@@ -13,6 +14,8 @@ export const AiChatCompanion: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [isThinking, setIsThinking] = useState(apiService.getIsThinking());
   const [isListening, setIsListening] = useState(false);
+  const [currentMood, setCurrentMood] = useState(personalityEngine.getMood());
+  const [isShy, setIsShy] = useState(personalityEngine.getIsShyActive());
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -20,7 +23,14 @@ export const AiChatCompanion: React.FC = () => {
       setMessages(apiService.getMessages());
       setIsThinking(apiService.getIsThinking());
     });
-    return () => unsub();
+    const unsubPersonality = personalityEngine.subscribe(() => {
+      setCurrentMood(personalityEngine.getMood());
+      setIsShy(personalityEngine.getIsShyActive());
+    });
+    return () => {
+      unsub();
+      unsubPersonality();
+    };
   }, []);
 
   useEffect(() => {
@@ -85,6 +95,14 @@ export const AiChatCompanion: React.FC = () => {
               <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 font-mono border border-cyan-500/30">
                 Synchronized Voice & Mouth
               </span>
+              <span className={`text-[10px] px-2 py-0.5 rounded font-mono border uppercase flex items-center gap-1 ${
+                isShy
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-500/40 animate-pulse'
+                  : 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30'
+              }`}>
+                {isShy ? <Heart className="w-3 h-3 text-rose-400 fill-rose-400" /> : <Sparkles className="w-3 h-3 text-emerald-400" />}
+                Mood: {currentMood}
+              </span>
             </h3>
             <p className="text-xs text-slate-400">
               Type or speak commands like "Sing a song", "Cook dinner", or ask questions
@@ -97,6 +115,52 @@ export const AiChatCompanion: React.FC = () => {
           className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
         >
           Clear
+        </button>
+      </div>
+
+      {/* Companion Quick Suggestion Chips */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 text-[11px] font-mono">
+        <button
+          onClick={() => apiService.sendMessage("You're so cute TARA, good job!")}
+          className="px-2.5 py-1 rounded-lg bg-pink-950/40 border border-pink-700/50 text-pink-300 hover:bg-pink-900/40 transition-all flex items-center gap-1.5 shrink-0"
+        >
+          <Heart className="w-3 h-3 text-pink-400" />
+          <span>Compliment (Shy Reaction)</span>
+        </button>
+        <button
+          onClick={() => apiService.sendMessage("What time is it?")}
+          className="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all flex items-center gap-1.5 shrink-0"
+        >
+          <Clock className="w-3 h-3 text-cyan-400" />
+          <span>What time is it?</span>
+        </button>
+        <button
+          onClick={() => apiService.sendMessage("Search for: quantum computing")}
+          className="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all flex items-center gap-1.5 shrink-0"
+        >
+          <Search className="w-3 h-3 text-amber-400" />
+          <span>Search query</span>
+        </button>
+        <button
+          onClick={() => apiService.sendMessage("Play lo-fi music")}
+          className="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all flex items-center gap-1.5 shrink-0"
+        >
+          <Music className="w-3 h-3 text-emerald-400" />
+          <span>Play lo-fi music</span>
+        </button>
+        <button
+          onClick={() => apiService.sendMessage("Cook dinner")}
+          className="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all flex items-center gap-1.5 shrink-0"
+        >
+          <Utensils className="w-3 h-3 text-orange-400" />
+          <span>Cook dinner</span>
+        </button>
+        <button
+          onClick={() => apiService.sendMessage("Sing a song")}
+          className="px-2.5 py-1 rounded-lg bg-slate-800/80 border border-slate-700 text-slate-300 hover:bg-slate-700 transition-all flex items-center gap-1.5 shrink-0"
+        >
+          <Music2 className="w-3 h-3 text-purple-400" />
+          <span>Sing a song</span>
         </button>
       </div>
 

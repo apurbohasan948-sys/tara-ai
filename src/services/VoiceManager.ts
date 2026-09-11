@@ -105,6 +105,10 @@ export class VoiceManager {
     return this.voiceState;
   }
 
+  public isSpeaking(): boolean {
+    return this.voiceState === 'VOICE_SPEAKING' || this.queueState === 'PLAYING';
+  }
+
   public getQueueState(): VoiceQueueState {
     return this.queueState;
   }

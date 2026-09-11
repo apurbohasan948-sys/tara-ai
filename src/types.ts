@@ -144,7 +144,14 @@ export type TaraActivity =
   | 'SLEEPING'
   | 'LISTENING'
   | 'SPEAKING'
-  | 'GAMING';
+  | 'GAMING'
+  | 'THINKING'
+  | 'OBSERVING'
+  | 'RELAXING'
+  | 'DANCING'
+  | 'LEARNING'
+  | 'CHECKING_TIME'
+  | 'GREETING';
 
 export type VoiceState =
   | 'VOICE_IDLE'
@@ -257,12 +264,151 @@ export interface SleepingSceneState {
   breathCycle: number;
 }
 
+export interface ThinkingSceneState {
+  bubblePulse: number;
+  stage: 'CONSIDERING' | 'PONDERING' | 'EVALUATING' | 'EUREKA';
+  thoughtTopic: string;
+}
+
+export interface ObservingSceneState {
+  lookAngle: number;
+  saccadeProgress: number;
+  observedTarget: string;
+}
+
+export interface DancingSceneState {
+  rhythmBeat: number;
+  bounceOffset: number;
+  energyLevel: number;
+}
+
+export interface LearningSceneState {
+  scanLineY: number;
+  dataProgress: number;
+  subject: string;
+}
+
+export interface CheckingTimeSceneState {
+  clockVisible: boolean;
+  timeString: string;
+}
+
 export interface TaraPersonality {
   cheerfulness: number; // 0 - 100
   curiosity: number;
   sassiness: number;
   energy: number;
   empathy: number;
+}
+
+export type TaraMood =
+  | 'cheerful'
+  | 'playful'
+  | 'curious'
+  | 'shy'
+  | 'thoughtful'
+  | 'mischievous'
+  | 'excited'
+  | 'caring'
+  | 'sleepy'
+  | 'focused'
+  | 'clumsy';
+
+export interface TaraPersonalityTraits {
+  friendly: number;       // 0 - 100 (Default: 90)
+  playful: number;        // 0 - 100 (Default: 80)
+  curious: number;        // 0 - 100 (Default: 85)
+  slightlyShy: number;    // 0 - 100 (Default: 75)
+  mischievous: number;    // 0 - 100 (Default: 45)
+  helpful: number;        // 0 - 100 (Default: 95)
+  expressive: number;     // 0 - 100 (Default: 90)
+  thoughtful: number;     // 0 - 100 (Default: 80)
+  excited: number;        // 0 - 100 (Default: 85)
+  clumsyFunny: number;    // 0 - 100 (Default: 35)
+  caring: number;         // 0 - 100 (Default: 95)
+}
+
+export type ShyReactionStage =
+  | 'INACTIVE'
+  | 'GLANCE_AWAY'
+  | 'FLUTTER_BLINK'
+  | 'BLUSH_INTENSIFY'
+  | 'SWEET_SMILE'
+  | 'FIDGET_ARM'
+  | 'BASHFUL_SPEECH'
+  | 'WARM_RECOVERY';
+
+export type ActionStatus =
+  | 'IDLE'
+  | 'STARTED'
+  | 'RUNNING'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'CANCELLED';
+
+export interface CompanionAction {
+  id: string;
+  name: string;
+  type: 'HARDWARE' | 'ANIMATION' | 'VOICE' | 'MUSIC' | 'SEARCH' | 'TIME' | 'GAME' | 'SYSTEM';
+  status: ActionStatus;
+  progress: number; // 0 - 100
+  startedAt: number;
+  completedAt?: number;
+  summary: string;
+  isHardwareVerified: boolean;
+  error?: string;
+}
+
+export interface PersonalityMemoryItem {
+  id: string;
+  category: 'preference' | 'activity' | 'topic' | 'habit' | 'stat' | 'compliment';
+  key: string;
+  value: string;
+  confidence: number;
+  lastUpdatedMs: number;
+  sanitized: boolean;
+}
+
+export type MusicPlaybackState =
+  | 'IDLE'
+  | 'PLAYING'
+  | 'PAUSED'
+  | 'STOPPED'
+  | 'BUFFERING';
+
+export interface TrackInfo {
+  id: string;
+  title: string;
+  artist: string;
+  duration: number;
+  genre: string;
+}
+
+export interface TimeManagerConfig {
+  ntpServer: string;
+  synced: boolean;
+  offsetMs: number;
+  lastSyncTime: number;
+  timezone: string;
+  use24Hour: boolean;
+  activeTimers: CompanionTimer[];
+}
+
+export interface CompanionTimer {
+  id: string;
+  label: string;
+  totalSec: number;
+  remainingSec: number;
+  active: boolean;
+}
+
+export interface SearchResult {
+  query: string;
+  title: string;
+  summary: string;
+  source: 'google_web' | 'gemini_grounding' | 'companion_kb';
+  verified: boolean;
+  timestamp: string;
 }
 
 export interface PresenceState {
@@ -278,4 +424,78 @@ export interface OledDisplayConfig {
   glow: boolean;
   pixelGrid: boolean;
   fps: number;
+}
+
+export interface AutonomousLifeConfig {
+  enabled: boolean;
+  minIdleTime: number; // in seconds before considering next autonomous activity
+  maxIdleTime: number; // in seconds
+  minActivityDuration: number; // in seconds
+  maxActivityDuration: number; // in seconds
+  activityCooldown: number; // in seconds before same activity can repeat
+  sleepStart: string; // "23:00"
+  sleepEnd: string; // "07:00"
+  allowMusic: boolean;
+  allowGames: boolean;
+  allowSinging: boolean;
+  allowCooking: boolean;
+  allowReading: boolean;
+  allowDancing: boolean;
+  allowThinking: boolean;
+  allowObserving: boolean;
+  allowRelaxing: boolean;
+  allowLearning: boolean;
+}
+
+export type AutonomousPriority =
+  | 'SYSTEM_ERROR'
+  | 'USER_INTERACTION'
+  | 'LISTENING'
+  | 'USER_RESPONSE'
+  | 'USER_REQUESTED_ACTIVITY'
+  | 'AUTONOMOUS_ACTIVITY'
+  | 'REST_IDLE';
+
+export type ActivityExecutionState =
+  | 'IDLE'
+  | 'STARTING'
+  | 'RUNNING'
+  | 'PAUSED'
+  | 'STOPPING'
+  | 'COMPLETED';
+
+export interface ActivityHistoryItem {
+  id: string;
+  activity: TaraActivity;
+  startTime: number;
+  endTime?: number;
+  durationSec: number;
+  reason: string;
+  personalityState: string;
+  interrupted: boolean;
+  interruptedBy?: string;
+}
+
+export interface AutonomousCandidate {
+  activity: TaraActivity;
+  score: number;
+  reason: string;
+  recommendedDuration: number;
+}
+
+export interface AutonomousStatus {
+  enabled: boolean;
+  currentPriority: AutonomousPriority;
+  executionState: ActivityExecutionState;
+  currentActivity: TaraActivity;
+  previousActivity: TaraActivity;
+  nextCandidate: AutonomousCandidate | null;
+  idleDurationSec: number;
+  activityDurationSec: number;
+  remainingDurationSec: number;
+  selectionReason: string;
+  isSleeping: boolean;
+  personalityMood: string;
+  userPresent: boolean;
+  lastUserInteractionSecAgo: number;
 }

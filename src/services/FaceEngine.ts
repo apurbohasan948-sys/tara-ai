@@ -575,7 +575,118 @@ export class FaceEngine {
       this.renderCookingScene(ctx, colors, w, h);
     } else if (frame.activity === 'READING') {
       this.renderReadingScene(ctx, colors, w, h);
+    } else if (frame.activity === 'CHECKING_TIME') {
+      this.renderCheckingTimeWidget(ctx, colors, w, h);
+    } else if (frame.activity === 'THINKING') {
+      this.renderThinkingThoughtBubbles(ctx, colors, w, h);
+    } else if (frame.activity === 'DANCING') {
+      this.renderDancingRhythmNotes(ctx, colors, w, h);
+    } else if (frame.activity === 'LEARNING') {
+      this.renderLearningDataMatrix(ctx, colors, w, h);
     }
+  }
+
+  private renderCheckingTimeWidget(
+    ctx: CanvasRenderingContext2D,
+    colors: ReturnType<typeof this.getColorScheme>,
+    w: number,
+    h: number
+  ) {
+    const timeState = activitySceneManager.getCheckingTimeState();
+    ctx.save();
+    ctx.shadowColor = colors.glow;
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = colors.dim;
+    ctx.strokeStyle = colors.primary;
+    ctx.lineWidth = 1.5;
+
+    // Small OLED digital clock capsule at bottom-center
+    const clockW = 76;
+    const clockH = 18;
+    const cx = (w - clockW) * 0.5;
+    const cy = h - 22;
+
+    ctx.beginPath();
+    ctx.roundRect(cx, cy, clockW, clockH, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = colors.accent;
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(timeState.timeString || '--:--', cx + clockW * 0.5, cy + clockH * 0.5 + 1);
+    ctx.restore();
+  }
+
+  private renderThinkingThoughtBubbles(
+    ctx: CanvasRenderingContext2D,
+    colors: ReturnType<typeof this.getColorScheme>,
+    w: number,
+    h: number
+  ) {
+    const think = activitySceneManager.getThinkingState();
+    ctx.save();
+    ctx.shadowColor = colors.glow;
+    ctx.shadowBlur = 5;
+    ctx.fillStyle = colors.accent;
+
+    // 3 ascending thought bubbles near upper right
+    const pulse = think.bubblePulse * 2;
+    ctx.beginPath();
+    ctx.arc(w * 0.76, h * 0.28, 2.5 + pulse * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(w * 0.82, h * 0.20, 3.5 + pulse * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(w * 0.90, h * 0.12, 5.0 + pulse * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  private renderDancingRhythmNotes(
+    ctx: CanvasRenderingContext2D,
+    colors: ReturnType<typeof this.getColorScheme>,
+    w: number,
+    h: number
+  ) {
+    const dance = activitySceneManager.getDancingState();
+    ctx.save();
+    ctx.shadowColor = colors.glow;
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = colors.accent;
+    ctx.font = 'bold 12px monospace';
+
+    // Rhythmic sparkles on left and right edges
+    const symbols = ['♫', '♪', '✦', '♬'];
+    const s1 = symbols[Math.floor((this.frameCount * 0.05) % symbols.length)];
+    const s2 = symbols[Math.floor((this.frameCount * 0.05 + 2) % symbols.length)];
+
+    ctx.fillText(s1, w * 0.08, h * 0.35 + Math.sin(this.frameCount * 0.2) * 5);
+    ctx.fillText(s2, w * 0.88, h * 0.35 - Math.sin(this.frameCount * 0.2) * 5);
+    ctx.restore();
+  }
+
+  private renderLearningDataMatrix(
+    ctx: CanvasRenderingContext2D,
+    colors: ReturnType<typeof this.getColorScheme>,
+    w: number,
+    h: number
+  ) {
+    const learn = activitySceneManager.getLearningState();
+    ctx.save();
+    ctx.strokeStyle = colors.primary;
+    ctx.fillStyle = colors.accent;
+    ctx.lineWidth = 1;
+
+    // Lower telemetry data scanline
+    const barY = h - 8;
+    ctx.strokeRect(w * 0.2, barY, w * 0.6, 4);
+    ctx.fillRect(w * 0.2 + 1, barY + 1, (w * 0.6 - 2) * (learn.dataProgress / 100), 2);
+    ctx.restore();
   }
 
   /**

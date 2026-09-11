@@ -8,6 +8,7 @@ import { TaraActivity, TaraPersonality } from '../types';
 import { activitySceneManager } from './ActivitySceneManager';
 import { animationCoordinator } from './AnimationCoordinator';
 import { armController } from './ArmController';
+import { autonomousLifeManager } from './autonomous/AutonomousLifeManager';
 import { emotionEngine } from './EmotionEngine';
 import { voiceManager } from './VoiceManager';
 
@@ -72,6 +73,7 @@ export class TaraBehaviorManager {
 
   public triggerActivity(activity: TaraActivity) {
     this.idleTimeSec = 0;
+    autonomousLifeManager.forceActivity(activity, 45);
     activitySceneManager.setActivity(activity);
 
     switch (activity) {

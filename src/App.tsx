@@ -17,6 +17,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Tv,
+  Heart,
 } from 'lucide-react';
 import { Header } from './components/Header';
 import { OledSimulator } from './components/OledSimulator';
@@ -30,9 +31,13 @@ import { MusicPlayerDeck } from './components/MusicPlayerDeck';
 import { PresenceRadar } from './components/PresenceRadar';
 import { FirmwareHub } from './components/FirmwareHub';
 import { SecurityDeck } from './components/SecurityDeck';
+import { PersonalityDeck } from './components/PersonalityDeck';
+import { AutonomousLifeDeck } from './components/AutonomousLifeDeck';
 
 type NavTab =
+  | 'AUTONOMOUS'
   | 'SIMULATION'
+  | 'PERSONALITY'
   | 'SECURITY'
   | 'DEBUGGER'
   | 'ARMS'
@@ -44,14 +49,16 @@ type NavTab =
   | 'FIRMWARE';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<NavTab>('SIMULATION');
+  const [activeTab, setActiveTab] = useState<NavTab>('AUTONOMOUS');
 
   const navItems: { id: NavTab; label: string; icon: React.FC<{ className?: string }> }[] = [
+    { id: 'AUTONOMOUS', label: 'Autonomous Life System', icon: Sparkles },
     { id: 'SIMULATION', label: 'Simulation & Tests', icon: Tv },
+    { id: 'PERSONALITY', label: 'Personality & Shy System', icon: Heart },
     { id: 'SECURITY', label: 'Security & Hardening (17 Tests)', icon: ShieldCheck },
     { id: 'DEBUGGER', label: 'Visual Debugger', icon: Terminal },
     { id: 'ARMS', label: 'Visual Arms', icon: Hand },
-    { id: 'EXPRESSIONS', label: 'Face Gallery (34)', icon: Sparkles },
+    { id: 'EXPRESSIONS', label: 'Face Gallery (34)', icon: Activity },
     { id: 'CHAT', label: 'Talk to TARA', icon: Bot },
     { id: 'GAMES', label: 'Companion Games', icon: Gamepad2 },
     { id: 'MUSIC', label: 'Lo-Fi Player', icon: Music },
@@ -105,7 +112,9 @@ export default function App() {
 
         {/* Tab Content Panes */}
         <div className="transition-opacity duration-200">
+          {activeTab === 'AUTONOMOUS' && <AutonomousLifeDeck />}
           {activeTab === 'SIMULATION' && <SimulationControls />}
+          {activeTab === 'PERSONALITY' && <PersonalityDeck />}
           {activeTab === 'SECURITY' && <SecurityDeck />}
           {activeTab === 'DEBUGGER' && <TabFaceDebug />}
           {activeTab === 'ARMS' && <ArmVisualizer />}

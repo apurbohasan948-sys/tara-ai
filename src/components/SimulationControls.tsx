@@ -34,12 +34,19 @@ import {
   ListRestart,
   CheckCircle2,
   Tv,
+  Heart,
+  Clock,
+  Search,
 } from 'lucide-react';
 import { actionManager } from '../services/ActionManager';
 import { activitySceneManager } from '../services/ActivitySceneManager';
 import { animationCoordinator } from '../services/AnimationCoordinator';
 import { armController } from '../services/ArmController';
+import { autonomousLifeManager } from '../services/autonomous/AutonomousLifeManager';
 import { expressionManager } from '../services/ExpressionManager';
+import { informationSearchManager } from '../services/InformationSearchManager';
+import { personalityEngine } from '../services/PersonalityEngine';
+import { timeManager } from '../services/TimeManager';
 import { voiceManager } from '../services/VoiceManager';
 import {
   TaraActivity,
@@ -106,6 +113,39 @@ export const SimulationControls: React.FC = () => {
     setActiveTest('SLEEP');
     setTestProgress('Running Sleep Sequence (Closed Eyes, ZZZ Particles)...');
     actionManager.triggerSleepSequence();
+  };
+
+  const handleTestShyReaction = () => {
+    stopActiveTest();
+    setActiveTest('SHY_REACTION');
+    setTestProgress('Running Shy Reaction (Averted Eyes, Flutter Blink, Blush Intensify, Sweet Smile, Zero Head Movement)...');
+    actionManager.triggerShySequence("You are the most adorable desktop robot, TARA!");
+  };
+
+  const handleTestNtpSync = async () => {
+    stopActiveTest();
+    setActiveTest('NTP_SYNC');
+    setTestProgress('Synchronizing clock with pool.ntp.org (Calculating UDP round-trip latency & offset)...');
+    const res = await timeManager.syncNTP();
+    setTestProgress(`NTP Sync Complete! Latency: ${res.latencyMs}ms, Time: ${timeManager.getFormattedTime()}`);
+  };
+
+  const handleTestSearchQuery = async () => {
+    stopActiveTest();
+    setActiveTest('SEARCH_LOOKUP');
+    setTestProgress('Performing grounded knowledge search for "social robotics"...');
+    const res = await informationSearchManager.performSearch('social robotics');
+    setTestProgress(`Search Complete: "${res.title}" -> ${res.summary}`);
+  };
+
+  const handleTestAutonomousCycle = () => {
+    stopActiveTest();
+    setActiveTest('AUTONOMOUS_CYCLE');
+    setTestProgress('Triggering Autonomous Life evaluation cycle and activity selection...');
+    const candidate = autonomousLifeManager.getStatus().nextCandidate;
+    const activity = candidate ? candidate.activity : 'READING';
+    autonomousLifeManager.forceActivity(activity, 30);
+    setTestProgress(`Autonomous Activity Started: ${activity} (${candidate?.reason || 'autonomous selection'})`);
   };
 
   const handleTestAllExpressions = () => {
@@ -233,6 +273,50 @@ export const SimulationControls: React.FC = () => {
               TEST_SLEEP
             </div>
             <div className="text-[11px] text-slate-400 mt-0.5">Closed Eyes + ZZZ</div>
+          </button>
+
+          <button
+            onClick={handleTestShyReaction}
+            className="px-3 py-2.5 rounded-xl bg-gradient-to-r from-pink-950/70 to-rose-900/60 hover:from-pink-900/80 hover:to-rose-800/80 border border-pink-500/50 text-left transition-all group shadow-sm shadow-pink-950"
+          >
+            <div className="flex items-center gap-2 text-pink-300 font-bold text-xs">
+              <Heart className="w-3.5 h-3.5 text-pink-400 fill-pink-400 group-hover:scale-110 transition-transform" />
+              TEST_SHY_REACTION
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Avert Eyes + Blush + 0 Head Move</div>
+          </button>
+
+          <button
+            onClick={handleTestNtpSync}
+            className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-cyan-500/30 text-left transition-all"
+          >
+            <div className="flex items-center gap-2 text-cyan-300 font-bold text-xs">
+              <Clock className="w-3.5 h-3.5 text-cyan-400" />
+              TEST_NTP_SYNC
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">pool.ntp.org Latency & Offset</div>
+          </button>
+
+          <button
+            onClick={handleTestSearchQuery}
+            className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-amber-500/30 text-left transition-all"
+          >
+            <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+              <Search className="w-3.5 h-3.5 text-amber-400" />
+              TEST_SEARCH_LOOKUP
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Grounded Anti-Hallucination Search</div>
+          </button>
+
+          <button
+            onClick={handleTestAutonomousCycle}
+            className="px-3 py-2.5 rounded-xl bg-gradient-to-r from-purple-950/70 to-indigo-900/60 hover:from-purple-900/80 hover:to-indigo-800/80 border border-purple-500/50 text-left transition-all group"
+          >
+            <div className="flex items-center gap-2 text-purple-300 font-bold text-xs">
+              <Sparkles className="w-3.5 h-3.5 text-purple-400 group-hover:scale-110 transition-transform" />
+              TEST_AUTONOMOUS_CYCLE
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Evaluate & Launch Autonomous Life</div>
           </button>
 
           <button

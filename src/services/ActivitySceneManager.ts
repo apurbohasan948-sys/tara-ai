@@ -9,12 +9,17 @@
  */
 
 import {
+  CheckingTimeSceneState,
   CookingSceneState,
+  DancingSceneState,
+  LearningSceneState,
   MusicSceneState,
+  ObservingSceneState,
   ReadingSceneState,
   SingingSceneState,
   SleepingSceneState,
   TaraActivity,
+  ThinkingSceneState,
 } from '../types';
 
 export class ActivitySceneManager {
@@ -58,6 +63,40 @@ export class ActivitySceneManager {
     breathCycle: 0,
   };
 
+  // Thinking state
+  private thinkingState: ThinkingSceneState = {
+    bubblePulse: 0,
+    stage: 'CONSIDERING',
+    thoughtTopic: 'Exploring creative companion algorithms...',
+  };
+
+  // Observing state
+  private observingState: ObservingSceneState = {
+    lookAngle: 0,
+    saccadeProgress: 0,
+    observedTarget: 'Desktop Environment',
+  };
+
+  // Dancing state
+  private dancingState: DancingSceneState = {
+    rhythmBeat: 0,
+    bounceOffset: 0,
+    energyLevel: 0.8,
+  };
+
+  // Learning state
+  private learningState: LearningSceneState = {
+    scanLineY: 0,
+    dataProgress: 0,
+    subject: 'System Telemetry & World Knowledge',
+  };
+
+  // Checking Time state
+  private checkingTimeState: CheckingTimeSceneState = {
+    clockVisible: true,
+    timeString: '',
+  };
+
   private activityTimeMs: number = 0;
 
   public setActivity(activity: TaraActivity) {
@@ -95,6 +134,42 @@ export class ActivitySceneManager {
         ],
         breathCycle: 0,
       };
+    } else if (activity === 'THINKING') {
+      const topics = [
+        'Analyzing neural speech patterns...',
+        'Synthesizing companion memory...',
+        'Pondering the cosmos & starlight...',
+        'Calibrating OLED brightness...',
+        'Reflecting on today\'s chats...',
+      ];
+      this.thinkingState = {
+        bubblePulse: 0,
+        stage: 'CONSIDERING',
+        thoughtTopic: topics[Math.floor(Math.random() * topics.length)],
+      };
+    } else if (activity === 'OBSERVING') {
+      this.observingState = {
+        lookAngle: 0,
+        saccadeProgress: 0,
+        observedTarget: 'Room Presence & Light',
+      };
+    } else if (activity === 'DANCING') {
+      this.dancingState = {
+        rhythmBeat: 0,
+        bounceOffset: 0,
+        energyLevel: 1.0,
+      };
+    } else if (activity === 'LEARNING') {
+      this.learningState = {
+        scanLineY: 0,
+        dataProgress: 0,
+        subject: 'Robotics & Microcontroller Logic',
+      };
+    } else if (activity === 'CHECKING_TIME') {
+      this.checkingTimeState = {
+        clockVisible: true,
+        timeString: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
     }
   }
 
@@ -122,6 +197,26 @@ export class ActivitySceneManager {
     return this.sleepingState;
   }
 
+  public getThinkingState(): ThinkingSceneState {
+    return this.thinkingState;
+  }
+
+  public getObservingState(): ObservingSceneState {
+    return this.observingState;
+  }
+
+  public getDancingState(): DancingSceneState {
+    return this.dancingState;
+  }
+
+  public getLearningState(): LearningSceneState {
+    return this.learningState;
+  }
+
+  public getCheckingTimeState(): CheckingTimeSceneState {
+    return this.checkingTimeState;
+  }
+
   /**
    * Update activity procedural animations (non-blocking, dt in ms)
    */
@@ -144,6 +239,21 @@ export class ActivitySceneManager {
         break;
       case 'SLEEPING':
         this.updateSleeping(dtMs, tSec);
+        break;
+      case 'THINKING':
+        this.updateThinking(dtMs, tSec);
+        break;
+      case 'OBSERVING':
+        this.updateObserving(dtMs, tSec);
+        break;
+      case 'DANCING':
+        this.updateDancing(dtMs, tSec);
+        break;
+      case 'LEARNING':
+        this.updateLearning(dtMs, tSec);
+        break;
+      case 'CHECKING_TIME':
+        this.updateCheckingTime(dtMs, tSec);
         break;
       default:
         break;
@@ -300,6 +410,46 @@ export class ActivitySceneManager {
       z.opacity -= (dtMs / 1000) * 0.25;
     });
     this.sleepingState.zzzParticles = this.sleepingState.zzzParticles.filter((z) => z.opacity > 0);
+  }
+
+  private updateThinking(dtMs: number, tSec: number) {
+    this.thinkingState.bubblePulse = (Math.sin(tSec * 3) + 1) * 0.5;
+    if (tSec < 3) {
+      this.thinkingState.stage = 'CONSIDERING';
+    } else if (tSec < 8) {
+      this.thinkingState.stage = 'PONDERING';
+    } else if (tSec < 14) {
+      this.thinkingState.stage = 'EVALUATING';
+    } else {
+      this.thinkingState.stage = 'EUREKA';
+    }
+  }
+
+  private updateObserving(dtMs: number, tSec: number) {
+    // Smooth scanning saccade from left to right inside the screen
+    this.observingState.lookAngle = Math.sin(tSec * 0.8) * 0.6;
+    this.observingState.saccadeProgress = (tSec % 4) / 4;
+  }
+
+  private updateDancing(dtMs: number, tSec: number) {
+    // Cheerful rhythmic beat & bounce
+    this.dancingState.rhythmBeat = Math.sin(tSec * 6);
+    this.dancingState.bounceOffset = Math.abs(Math.sin(tSec * 6)) * 4;
+  }
+
+  private updateLearning(dtMs: number, tSec: number) {
+    // Scanning bar moving down the virtual display data
+    this.learningState.scanLineY = (tSec * 25) % 40;
+    this.learningState.dataProgress = Math.min(100, Math.floor((tSec * 15) % 100));
+  }
+
+  private updateCheckingTime(dtMs: number, tSec: number) {
+    this.checkingTimeState.clockVisible = true;
+    this.checkingTimeState.timeString = new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
   }
 }
 

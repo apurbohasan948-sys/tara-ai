@@ -11,7 +11,13 @@ import { securityLogger } from './SecurityLogger';
 import { actionManager } from './ActionManager';
 import { animationCoordinator } from './AnimationCoordinator';
 import { armController } from './ArmController';
+import { autonomousLifeManager } from './autonomous/AutonomousLifeManager';
+import { informationSearchManager } from './InformationSearchManager';
+import { musicManager } from './MusicManager';
+import { personalityEngine } from './PersonalityEngine';
+import { personalityMemory } from './PersonalityMemory';
 import { taraBehaviorManager } from './TaraBehaviorManager';
+import { timeManager } from './TimeManager';
 import { voiceManager } from './VoiceManager';
 
 export interface ChatMessage {
@@ -22,12 +28,13 @@ export interface ChatMessage {
   emotion?: TaraEmotion;
 }
 
-const TARA_SYSTEM_PROMPT = `
+const TARA_BASE_PROMPT = `
 You are TARA, an ultra-cute, intelligent, and warm AI Desktop Companion robot with a vibrant OLED display face and expressive animated visual arms.
-Your personality traits:
-- Warm, enthusiastic, loyal, witty, and curious.
+Core characteristics:
+- Friendly, playful, curious, slightly shy when complimented, helpful, and caring.
 - Keep answers concise (1-3 conversational sentences) suitable for desktop speech.
-- When the user asks you to sing, cook, read, play music, or sleep, enthusiastically agree and indicate you are starting the activity.
+- When asked about activities (cooking, singing, reading, music, sleeping), agree enthusiastically.
+- Face chassis remains fixed; all expressiveness is rendered through eyes, pupils, blush, mouth, and hands.
 `;
 
 export class ApiService {
@@ -175,6 +182,9 @@ export class ApiService {
     const trimmed = userInput.trim();
     if (!trimmed) return '';
 
+    // Notify AutonomousLifeManager immediately that the user is interacting
+    autonomousLifeManager.notifyUserInteraction('user message');
+
     const userMsg: ChatMessage = {
       id: Math.random().toString(36).substring(2, 9),
       sender: 'user',
@@ -187,8 +197,102 @@ export class ApiService {
     armController.setGesture('THINKING');
     this.notify();
 
+    personalityMemory.recordInteraction();
+
+    // 1. Compliment & Affection Intent -> Trigger SHY BEHAVIOR SYSTEM
+    if (personalityEngine.isCompliment(trimmed)) {
+      this.isThinking = false;
+      const shyReply = personalityEngine.triggerShyReaction(trimmed);
+      this.appendTaraReply(shyReply, 'shy');
+      return shyReply;
+    }
+
     // Command Intent Detection
     const lower = trimmed.toLowerCase();
+
+    // 2. Time & Date Queries
+    if (
+      lower.includes('what time') ||
+      lower.includes("what's the time") ||
+      lower.includes('current time') ||
+      lower.includes('what day') ||
+      lower.includes('what date') ||
+      lower === 'time'
+    ) {
+      this.isThinking = false;
+      const timeReply = timeManager.handleTimeQuery();
+      this.appendTaraReply(timeReply, 'happy');
+      voiceManager.speak(timeReply, 'happy');
+      return timeReply;
+    }
+
+    // 3. Timer commands (e.g. "set a timer for 10 seconds" or "5 minutes timer")
+    if (lower.includes('timer') || lower.includes('countdown')) {
+      const match = lower.match(/(\d+)\s*(second|sec|minute|min)/i);
+      let sec = 60;
+      if (match) {
+        const val = parseInt(match[1], 10);
+        sec = match[2].startsWith('min') ? val * 60 : val;
+      }
+      this.isThinking = false;
+      const timer = timeManager.createTimer('Desk Work Timer', sec);
+      const timerReply = `Timer started for ${sec} seconds! I'll notify you as soon as it rings.`;
+      this.appendTaraReply(timerReply, 'focused');
+      voiceManager.speak(timerReply, 'focused');
+      return timerReply;
+    }
+
+    // 4. Information Search Commands (e.g., "search for ...", "what is ...", "who is ...")
+    if (
+      lower.startsWith('search') ||
+      lower.startsWith('google') ||
+      lower.startsWith('find out') ||
+      lower.startsWith('what is') ||
+      lower.startsWith('who is') ||
+      lower.startsWith('tell me about')
+    ) {
+      try {
+        const result = await informationSearchManager.performSearch(trimmed, this.geminiClient);
+        this.isThinking = false;
+        const searchReply = `${result.summary}`;
+        this.appendTaraReply(searchReply, 'curious');
+        voiceManager.speak(searchReply, 'curious');
+        return searchReply;
+      } catch (err) {
+        // continue to normal fallback
+      }
+    }
+
+    // 5. Music Control Commands
+    if (lower.includes('play music') || lower.includes('start music') || lower.includes('lofi music')) {
+      this.isThinking = false;
+      musicManager.playTrack();
+      const track = musicManager.getCurrentTrack();
+      const reply = `Spinning up "${track.title}" by ${track.artist}! Putting on my headphones.`;
+      this.appendTaraReply(reply, 'happy');
+      voiceManager.speak(reply, 'happy');
+      return reply;
+    }
+
+    if (lower.includes('pause music') || lower.includes('stop music')) {
+      this.isThinking = false;
+      musicManager.pause();
+      const reply = "Music paused. Ready whenever you want to resume.";
+      this.appendTaraReply(reply, 'neutral');
+      voiceManager.speak(reply, 'neutral');
+      return reply;
+    }
+
+    if (lower.includes('next song') || lower.includes('next track') || lower.includes('skip song')) {
+      this.isThinking = false;
+      musicManager.next();
+      const track = musicManager.getCurrentTrack();
+      const reply = `Skipped to "${track.title}" (${track.genre}).`;
+      this.appendTaraReply(reply, 'happy');
+      voiceManager.speak(reply, 'happy');
+      return reply;
+    }
+
     if (lower.includes('sing') || lower.includes('song')) {
       this.isThinking = false;
       const reply = "I would love to sing for you! Let me grab my microphone!";
@@ -235,11 +339,12 @@ export class ApiService {
       let replyEmotion: TaraEmotion = 'happy';
 
       if (this.geminiClient) {
+        const fullSystemPrompt = `${TARA_BASE_PROMPT}\n${personalityEngine.getPersonalityPromptModifier()}`;
         const response = await this.geminiClient.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: trimmed,
           config: {
-            systemInstruction: TARA_SYSTEM_PROMPT,
+            systemInstruction: fullSystemPrompt,
           },
         });
         replyText = response.text || '';
@@ -286,14 +391,29 @@ export class ApiService {
   }
 
   private generateLocalFallback(input: string): string {
-    const p = taraBehaviorManager.getPersonality();
-    const greetings = [
+    const mood = personalityEngine.getMood();
+    const traits = personalityEngine.getTraits();
+
+    if (mood === 'curious') {
+      return "Ooh, that sounds intriguing! How does that connect to what you're building today?";
+    }
+    if (mood === 'playful') {
+      return "Hehe! If I had eyebrows on a physical chassis, I'd wiggle them right now. What's our next mini-quest?";
+    }
+    if (mood === 'thoughtful') {
+      return "I was just pondering that. Everything on your desk seems to harmonize when you're in the flow!";
+    }
+    if (mood === 'excited') {
+      return "Yahoo! That's wonderful news! My display is practically sparkling with enthusiasm!";
+    }
+
+    const replies = [
       "I'm here right by your side on your desk! What shall we explore next?",
       "Always delighted to chat with you! Working on an interesting project?",
-      "That sounds great! Remember to stay hydrated while we work together!",
-      "I was just thinking the same thing! My sensors are running at peak happiness.",
+      "That sounds great! Remember to stay hydrated and take care of your eyes while we work!",
+      "My OLED display is running at peak brightness being here with you!",
     ];
-    return greetings[Math.floor(Math.random() * greetings.length)];
+    return replies[Math.floor(Math.random() * replies.length)];
   }
 }
 
