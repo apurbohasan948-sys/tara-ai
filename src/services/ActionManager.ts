@@ -1,257 +1,289 @@
-import {
-  RobotActionName,
-  ActionTimeline,
-  ActionTimelineStep,
-  RobotEmotion,
-  RobotState,
-  ArmGesture,
-} from '../types';
+/**
+ * ActionManager.ts
+ * Dispatches high level actions and test sequences.
+ */
+
+import { TaraArmGesture, TaraExpression, TaraEyeState, TaraMouthState } from '../types';
+import { activitySceneManager } from './ActivitySceneManager';
+import { animationCoordinator } from './AnimationCoordinator';
 import { armController } from './ArmController';
-import { emotionEngine } from './EmotionEngine';
+import { expressionManager } from './ExpressionManager';
 import { voiceManager } from './VoiceManager';
 
-export interface ActionExecutionContext {
-  setState: (state: RobotState) => void;
-  setEmotion: (emotion: RobotEmotion) => void;
-  onFinish?: () => void;
-}
-
 export class ActionManager {
-  private currentAction: RobotActionName | null = null;
-  private actionTimeouts: any[] = [];
-  private activeTimeline: ActionTimeline | null = null;
-  private actionStartTime: number = 0;
-  private listeners: ((action: RobotActionName | null, elapsedMs: number, totalMs: number) => void)[] = [];
-  private tickerInterval: any = null;
+  private isTestingSequence: boolean = false;
 
-  // Pre-configured Action Timelines
-  public static readonly TIMELINES: Record<RobotActionName, ActionTimeline> = {
-    GreetingAction: {
-      name: 'GreetingAction',
-      durationMs: 3800,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'SURPRISED' },
-        { offsetMs: 400, subsystem: 'face', action: 'setEmotion', payload: 'HAPPY' },
-        { offsetMs: 650, subsystem: 'arm', action: 'gesture', payload: 'WAVE', durationMs: 2500 },
-        { offsetMs: 900, subsystem: 'voice', action: 'speak', payload: "Hey! Good to see you. I'm TARA, your desktop companion." },
-        { offsetMs: 3200, subsystem: 'face', action: 'setEmotion', payload: 'NEUTRAL' },
-        { offsetMs: 3700, subsystem: 'arm', action: 'gesture', payload: 'IDLE' },
-      ],
-    },
-    ConversationAction: {
-      name: 'ConversationAction',
-      durationMs: 4000,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'CURIOUS' },
-        { offsetMs: 300, subsystem: 'face', action: 'setState', payload: 'LISTENING' },
-      ],
-    },
-    ReadingAction: {
-      name: 'ReadingAction',
-      durationMs: 6000,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'CURIOUS' },
-        { offsetMs: 300, subsystem: 'arm', action: 'gesture', payload: 'READING', durationMs: 5500 },
-        { offsetMs: 600, subsystem: 'voice', action: 'speak', payload: "Chapter One. The stars were quiet above the digital observatory..." },
-        { offsetMs: 5500, subsystem: 'face', action: 'setEmotion', payload: 'NEUTRAL' },
-        { offsetMs: 5800, subsystem: 'arm', action: 'gesture', payload: 'IDLE' },
-      ],
-    },
-    SingingAction: {
-      name: 'SingingAction',
-      durationMs: 5000,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'PLAYFUL' },
-        { offsetMs: 400, subsystem: 'arm', action: 'gesture', payload: 'SINGING', durationMs: 4500 },
-        { offsetMs: 700, subsystem: 'voice', action: 'speak', payload: "La la la, beep boop chime, companion melody in standard time!" },
-        { offsetMs: 4600, subsystem: 'face', action: 'setEmotion', payload: 'HAPPY' },
-        { offsetMs: 4900, subsystem: 'arm', action: 'gesture', payload: 'IDLE' },
-      ],
-    },
-    CookingAction: {
-      name: 'CookingAction',
-      durationMs: 5500,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'EXCITED' },
-        { offsetMs: 300, subsystem: 'arm', action: 'gesture', payload: 'COOKING', durationMs: 5000 },
-        { offsetMs: 600, subsystem: 'voice', action: 'speak', payload: "Let's cook! Step 1: add two spoons of joy and stir gently." },
-        { offsetMs: 4800, subsystem: 'face', action: 'setEmotion', payload: 'PROUD' },
-        { offsetMs: 5300, subsystem: 'arm', action: 'gesture', payload: 'IDLE' },
-      ],
-    },
-    MusicAction: {
-      name: 'MusicAction',
-      durationMs: 4500,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'HAPPY' },
-        { offsetMs: 300, subsystem: 'arm', action: 'gesture', payload: 'SINGING', durationMs: 4000 },
-        { offsetMs: 600, subsystem: 'voice', action: 'speak', payload: "Playing your companion soundtrack now." },
-      ],
-    },
-    ThinkingAction: {
-      name: 'ThinkingAction',
-      durationMs: 3000,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'CURIOUS' },
-        { offsetMs: 100, subsystem: 'face', action: 'setState', payload: 'THINKING' },
-        { offsetMs: 300, subsystem: 'arm', action: 'gesture', payload: 'THINKING', durationMs: 2500 },
-      ],
-    },
-    IdleAction: {
-      name: 'IdleAction',
-      durationMs: 2500,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'NEUTRAL' },
-        { offsetMs: 100, subsystem: 'arm', action: 'gesture', payload: 'IDLE' },
-      ],
-    },
-    SleepAction: {
-      name: 'SleepAction',
-      durationMs: 3000,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'SLEEPY' },
-        { offsetMs: 400, subsystem: 'voice', action: 'speak', payload: "Powering down to resting state. Goodnight." },
-        { offsetMs: 2200, subsystem: 'face', action: 'setState', payload: 'SLEEPING' },
-        { offsetMs: 2400, subsystem: 'arm', action: 'gesture', payload: 'IDLE' },
-      ],
-    },
-    WakeAction: {
-      name: 'WakeAction',
-      durationMs: 3200,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setState', payload: 'SURPRISED' },
-        { offsetMs: 300, subsystem: 'face', action: 'setEmotion', payload: 'HAPPY' },
-        { offsetMs: 600, subsystem: 'arm', action: 'gesture', payload: 'HAPPY_MOVE', durationMs: 2000 },
-        { offsetMs: 900, subsystem: 'voice', action: 'speak', payload: "I'm awake and ready!" },
-        { offsetMs: 3000, subsystem: 'face', action: 'setState', payload: 'IDLE' },
-      ],
-    },
-    CelebrationAction: {
-      name: 'CelebrationAction',
-      durationMs: 4000,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'EXCITED' },
-        { offsetMs: 200, subsystem: 'arm', action: 'gesture', payload: 'HAPPY_MOVE', durationMs: 3500 },
-        { offsetMs: 500, subsystem: 'voice', action: 'speak', payload: "Hooray! That was amazing!" },
-        { offsetMs: 3500, subsystem: 'face', action: 'setEmotion', payload: 'PROUD' },
-      ],
-    },
-    NotificationAction: {
-      name: 'NotificationAction',
-      durationMs: 3500,
-      steps: [
-        { offsetMs: 0, subsystem: 'face', action: 'setEmotion', payload: 'CURIOUS' },
-        { offsetMs: 200, subsystem: 'arm', action: 'gesture', payload: 'POINT', durationMs: 2000 },
-        { offsetMs: 500, subsystem: 'voice', action: 'speak', payload: "You have a new companion update." },
-      ],
-    },
-  };
+  /**
+   * 6. Full singing sequence:
+   * "Sing a song"
+   * IDLE -> PREPARE_SINGING -> MICROPHONE_APPEAR -> SINGING
+   * 1. Mic appears
+   * 2. Hand moves toward mic
+   * 3. Holds mic
+   * 4. Singing expression
+   * 5. Mouth animation
+   * 6. Music notes
+   * 7. Arm makes small rhythmic movements
+   * 8. Eyes occasionally blink
+   * 9. Singing continues
+   * 10. Mic disappears after completion
+   * 11. Return to normal face
+   */
+  public triggerSingingSequence(songLyrics?: string) {
+    const text = songLyrics || "Do re mi fa sol la ti do~ Starlight shining bright on our desk tonight!";
 
-  public subscribe(listener: (action: RobotActionName | null, elapsedMs: number, totalMs: number) => void): () => void {
-    this.listeners.push(listener);
-    return () => {
-      this.listeners = this.listeners.filter((l) => l !== listener);
-    };
-  }
+    // Transition to singing
+    activitySceneManager.setActivity('SINGING');
+    armController.setGesture('HOLD_MIC');
+    animationCoordinator.setExpression('singing');
 
-  private notify() {
-    const elapsed = this.currentAction ? Date.now() - this.actionStartTime : 0;
-    const total = this.activeTimeline ? this.activeTimeline.durationMs : 0;
-    for (const l of this.listeners) {
-      l(this.currentAction, elapsed, total);
-    }
-  }
-
-  public getCurrentAction(): RobotActionName | null {
-    return this.currentAction;
+    voiceManager.speak(
+      text,
+      'excited',
+      2,
+      () => {
+        // while singing
+        animationCoordinator.setExpression('singing');
+      },
+      () => {
+        // After completion
+        setTimeout(() => {
+          activitySceneManager.setActivity('IDLE');
+          armController.setGesture('IDLE');
+          animationCoordinator.setExpression('happy');
+        }, 1200);
+      }
+    );
   }
 
   /**
-   * Conflict Prevention:
-   * Stops running actions before starting a new one
+   * 7. Full cooking sequence
    */
-  public stopActiveAction() {
-    for (const t of this.actionTimeouts) {
-      clearTimeout(t);
-    }
-    this.actionTimeouts = [];
+  public triggerCookingSequence() {
+    activitySceneManager.setActivity('COOKING');
+    armController.setGesture('STIR');
+    animationCoordinator.setExpression('focused');
 
-    if (this.tickerInterval) {
-      clearInterval(this.tickerInterval);
-      this.tickerInterval = null;
-    }
+    voiceManager.speak(
+      "Heating the burner! Watch the flame ignite, and now our pot is simmering happily!",
+      'happy',
+      2,
+      undefined,
+      () => {
+        setTimeout(() => {
+          animationCoordinator.setExpression('celebrating');
+          armController.setGesture('CELEBRATE');
+          voiceManager.speak("Dish completed! Smells absolutely delicious.", 'excited');
 
-    this.currentAction = null;
-    this.activeTimeline = null;
-    this.notify();
-  }
-
-  public executeAction(actionName: RobotActionName, context: ActionExecutionContext): boolean {
-    const timeline = ActionManager.TIMELINES[actionName];
-    if (!timeline) {
-      console.warn(`Action "${actionName}" not found`);
-      return false;
-    }
-
-    // Stop conflicting actions immediately
-    this.stopActiveAction();
-
-    this.currentAction = actionName;
-    this.activeTimeline = timeline;
-    this.actionStartTime = Date.now();
-    this.notify();
-
-    // Start tick update for timeline progress bar
-    this.tickerInterval = setInterval(() => {
-      this.notify();
-    }, 100);
-
-    // Schedule each step in the timeline
-    for (const step of timeline.steps) {
-      const timeoutId = setTimeout(() => {
-        this.executeStep(step, context);
-      }, step.offsetMs);
-      this.actionTimeouts.push(timeoutId);
-    }
-
-    // Final finish timeout
-    const finishTimeoutId = setTimeout(() => {
-      this.stopActiveAction();
-      if (context.onFinish) {
-        context.onFinish();
+          setTimeout(() => {
+            activitySceneManager.setActivity('IDLE');
+            armController.setGesture('IDLE');
+            animationCoordinator.setExpression('happy');
+          }, 3500);
+        }, 8000);
       }
-    }, timeline.durationMs);
-    this.actionTimeouts.push(finishTimeoutId);
-
-    return true;
+    );
   }
 
-  private executeStep(step: ActionTimelineStep, context: ActionExecutionContext) {
-    switch (step.subsystem) {
-      case 'face':
-        if (step.action === 'setEmotion') {
-          context.setEmotion(step.payload as RobotEmotion);
-          emotionEngine.setEmotion(step.payload as RobotEmotion);
-        } else if (step.action === 'setState') {
-          context.setState(step.payload as RobotState);
-        }
-        break;
+  /**
+   * 8. Reading sequence
+   */
+  public triggerReadingSequence() {
+    activitySceneManager.setActivity('READING');
+    armController.setGesture('HOLD_BOOK');
+    animationCoordinator.setExpression('focused');
 
-      case 'arm':
-        if (step.action === 'gesture') {
-          armController.executeGesture(step.payload as ArmGesture, step.durationMs || 3000);
-        }
-        break;
+    voiceManager.speak(
+      "Opening up our companion encyclopedia. Scanning chapter three...",
+      'neutral',
+      1,
+      undefined,
+      () => {
+        setTimeout(() => {
+          voiceManager.speak("Fascinating insight right here on this page!", 'happy');
+        }, 4000);
+      }
+    );
+  }
 
-      case 'voice':
-        if (step.action === 'speak') {
-          voiceManager.speak(step.payload as string);
-        }
-        break;
+  /**
+   * 9. Music sequence
+   */
+  public triggerMusicSequence() {
+    activitySceneManager.setActivity('MUSIC');
+    armController.setGesture('IDLE');
+    animationCoordinator.setExpression('happy');
 
-      case 'audio':
-        break;
-    }
+    voiceManager.speak("Pumping up the lo-fi companion playlist! Enjoy the vibe.", 'happy');
+  }
+
+  /**
+   * 10. Sleep sequence
+   */
+  public triggerSleepSequence() {
+    activitySceneManager.setActivity('SLEEPING');
+    armController.setGesture('IDLE');
+    animationCoordinator.setExpression('deep_sleep');
+
+    voiceManager.speak("Entering deep sleep mode... Goodnight, friend! Zzz...", 'sleepy');
+  }
+
+  /**
+   * Test all 34+ facial expressions sequentially
+   */
+  public testAllExpressions(onStep?: (exp: TaraExpression, index: number, total: number) => void): () => void {
+    const list = expressionManager.getAllExpressions().map((e) => e.name);
+    let index = 0;
+    this.isTestingSequence = true;
+
+    const interval = setInterval(() => {
+      if (!this.isTestingSequence || index >= list.length) {
+        clearInterval(interval);
+        this.isTestingSequence = false;
+        animationCoordinator.setExpression('happy');
+        return;
+      }
+      const exp = list[index];
+      animationCoordinator.setExpression(exp);
+      onStep?.(exp, index + 1, list.length);
+      index++;
+    }, 1200);
+
+    return () => {
+      this.isTestingSequence = false;
+      clearInterval(interval);
+      animationCoordinator.setExpression('happy');
+    };
+  }
+
+  /**
+   * Test all mouth shapes sequentially
+   */
+  public testAllMouthStates(onStep?: (mouth: TaraMouthState, index: number, total: number) => void): () => void {
+    const mouthStates: TaraMouthState[] = [
+      'CLOSED',
+      'SMALL',
+      'SMILE',
+      'OPEN_SMALL',
+      'OPEN_MEDIUM',
+      'OPEN_WIDE',
+      'O_SHAPE',
+      'A_SHAPE',
+      'E_SHAPE',
+      'SPEAKING',
+      'LAUGHING',
+      'SINGING',
+    ];
+
+    let index = 0;
+    this.isTestingSequence = true;
+
+    const interval = setInterval(() => {
+      if (!this.isTestingSequence || index >= mouthStates.length) {
+        clearInterval(interval);
+        this.isTestingSequence = false;
+        return;
+      }
+      const m = mouthStates[index];
+      // Temporarily bypass expression mouth
+      animationCoordinator.setExpression('neutral');
+      // simulate amplitude for open shapes
+      onStep?.(m, index + 1, mouthStates.length);
+      index++;
+    }, 1000);
+
+    return () => {
+      this.isTestingSequence = false;
+      clearInterval(interval);
+    };
+  }
+
+  /**
+   * Test all eye states sequentially
+   */
+  public testAllEyeStates(onStep?: (eye: TaraEyeState, index: number, total: number) => void): () => void {
+    const eyeStates: TaraEyeState[] = [
+      'normal',
+      'blink',
+      'open',
+      'look_left',
+      'look_right',
+      'look_down',
+      'look_up',
+      'squint',
+      'wide',
+      'wink',
+      'closed',
+      'half_closed',
+      'dizzy_spiral',
+      'hearts',
+      'tears',
+      'sparkle',
+    ];
+
+    let index = 0;
+    this.isTestingSequence = true;
+
+    const interval = setInterval(() => {
+      if (!this.isTestingSequence || index >= eyeStates.length) {
+        clearInterval(interval);
+        this.isTestingSequence = false;
+        animationCoordinator.setEyeOverride(null);
+        return;
+      }
+      const eye = eyeStates[index];
+      animationCoordinator.setEyeOverride(eye);
+      onStep?.(eye, index + 1, eyeStates.length);
+      index++;
+    }, 1000);
+
+    return () => {
+      this.isTestingSequence = false;
+      clearInterval(interval);
+      animationCoordinator.setEyeOverride(null);
+    };
+  }
+
+  /**
+   * Test all arm gestures sequentially
+   */
+  public testAllArmGestures(onStep?: (gesture: TaraArmGesture, index: number, total: number) => void): () => void {
+    const gestures: TaraArmGesture[] = [
+      'IDLE',
+      'WAVE',
+      'HOLD_MIC',
+      'RAISE_HAND',
+      'POINT',
+      'THUMBS_UP',
+      'CLAP',
+      'STIR',
+      'HOLD_BOOK',
+      'CELEBRATE',
+      'THINKING',
+      'GREETING',
+    ];
+
+    let index = 0;
+    this.isTestingSequence = true;
+
+    const interval = setInterval(() => {
+      if (!this.isTestingSequence || index >= gestures.length) {
+        clearInterval(interval);
+        this.isTestingSequence = false;
+        armController.setGesture('IDLE');
+        return;
+      }
+      const g = gestures[index];
+      armController.setGesture(g);
+      onStep?.(g, index + 1, gestures.length);
+      index++;
+    }, 1200);
+
+    return () => {
+      this.isTestingSequence = false;
+      clearInterval(interval);
+      armController.setGesture('IDLE');
+    };
   }
 }
 

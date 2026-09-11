@@ -1,219 +1,462 @@
-import { ArmGesture, ArmState } from '../types';
+/**
+ * ArmController.ts - Standalone Floating Hand Animation Controller
+ *
+ * MANDATORY DESIGN DIRECTIVE:
+ * - NO UPPER ARMS.
+ * - NO FOREARMS.
+ * - NO ELBOWS.
+ * - NO SHOULDER-TO-HAND CONNECTING SEGMENTS.
+ * - ONLY STANDALONE FLOATING ANIMATED 5-FINGER CARTOON HANDS.
+ * - Pure display animation - ZERO MOTORS, ZERO SERVOS, ZERO GPIO.
+ */
+
+import { TaraArmGesture, TaraHandShape, TaraProp } from '../types';
+
+export interface StandaloneHandState {
+  x: number;          // Screen pixel X position
+  y: number;          // Screen pixel Y position
+  rotation: number;   // Rotation angle in radians
+  shape: TaraHandShape;
+  visible: boolean;
+  scale: number;
+  side: number;       // -1 = left, 1 = right
+  // Legacy telemetry compatibility
+  shoulder: number;
+  elbow: number;
+  wrist: number;
+  handShape: TaraHandShape;
+}
+
+export interface HandPoseRenderData {
+  left: StandaloneHandState;
+  right: StandaloneHandState;
+  propHeld?: TaraProp;
+  gesture: TaraArmGesture;
+}
+
+export interface ArmPoseConfig {
+  left: {
+    shoulder: number;
+    elbow: number;
+    wrist: number;
+    handShape: TaraHandShape;
+  };
+  right: {
+    shoulder: number;
+    elbow: number;
+    wrist: number;
+    handShape: TaraHandShape;
+  };
+  propHeld?: TaraProp;
+  animationRate?: number;
+}
+
+export const GESTURE_POSES: Record<TaraArmGesture, ArmPoseConfig> = {
+  IDLE: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+  },
+  WAVE: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 20, handShape: 'wave' },
+    animationRate: 6,
+  },
+  GREETING: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 15, handShape: 'open_5_fingers' },
+    animationRate: 3,
+  },
+  POINT_LEFT: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'point_side' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+  },
+  POINT_RIGHT: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'point_side' },
+  },
+  POINT_UP: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'point_up' },
+  },
+  POINT: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'point_side' },
+  },
+  THUMBS_UP: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'thumbs_up' },
+  },
+  CLAP: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'clap' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'clap' },
+    animationRate: 6,
+  },
+  OPEN_HAND: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+  },
+  CLOSE_HAND: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'fist' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'fist' },
+  },
+  HOLD_MIC: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'grip' },
+    propHeld: 'MICROPHONE',
+    animationRate: 2,
+  },
+  HOLD_BOOK: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'grip' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'grip' },
+    propHeld: 'BOOK',
+    animationRate: 1,
+  },
+  STIR: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'grip' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'grip' },
+    propHeld: 'UTENSIL',
+    animationRate: 4,
+  },
+  CELEBRATE: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    animationRate: 5,
+  },
+  THINKING: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'pinch' },
+  },
+  LISTENING: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    animationRate: 2,
+  },
+  PLAYING: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    animationRate: 5,
+  },
+  RAISE_HAND: {
+    left: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+    right: { shoulder: 0, elbow: 0, wrist: 0, handShape: 'open_5_fingers' },
+  },
+};
 
 export class ArmController {
-  private state: ArmState = {
-    leftAngle: 0,
-    rightAngle: 0,
-    leftHand: 'OPEN',
-    rightHand: 'OPEN',
-    activeGesture: 'IDLE',
-    isMoving: false,
-    hardwareAttached: true, // In simulation mode, mock hardware is active
-  };
+  private currentGesture: TaraArmGesture = 'IDLE';
+  private targetGesture: TaraArmGesture = 'IDLE';
+  private animTime: number = 0;
 
-  private armsVisible: boolean = false;
-  private gestureTimeout: any = null;
-  private animationInterval: any = null;
-  private listeners: ((state: ArmState) => void)[] = [];
-
-  // Safe mechanical servo angle bounds (degrees from rest)
-  public static readonly MIN_ANGLE = -80;
-  public static readonly MAX_ANGLE = 90;
-  public static readonly REST_ANGLE = 0;
-
-  constructor() {
-    this.resetToSafePosition();
+  public setGesture(gesture: TaraArmGesture) {
+    this.targetGesture = gesture;
+    this.currentGesture = gesture;
   }
 
-  public subscribe(listener: (state: ArmState) => void): () => void {
-    this.listeners.push(listener);
-    listener(this.state);
-    return () => {
-      this.listeners = this.listeners.filter((l) => l !== listener);
-    };
+  public getGesture(): TaraArmGesture {
+    return this.currentGesture;
   }
 
-  private notify() {
-    for (const listener of this.listeners) {
-      listener({ ...this.state });
-    }
-  }
-
-  public getState(): ArmState {
-    return { ...this.state };
-  }
-
-  public setHardwareAttached(attached: boolean) {
-    this.state.hardwareAttached = attached;
-    this.notify();
-  }
-
-  public setArmsVisible(visible: boolean) {
-    this.armsVisible = visible;
-    this.notify();
-  }
-
-  public getArmsVisible(): boolean {
-    return this.armsVisible || this.state.isMoving || this.state.activeGesture !== 'IDLE';
-  }
-
-  public triggerGesture(gesture: ArmGesture, durationMs: number = 3000): void {
-    this.executeGesture(gesture, durationMs);
-  }
-
-  public resetToSafePosition() {
-    this.stopMovement();
-    this.state.leftAngle = ArmController.REST_ANGLE;
-    this.state.rightAngle = ArmController.REST_ANGLE;
-    this.state.leftHand = 'OPEN';
-    this.state.rightHand = 'OPEN';
-    this.state.activeGesture = 'IDLE';
-    this.state.isMoving = false;
-    this.notify();
-  }
-
-  public stopMovement() {
-    if (this.gestureTimeout) {
-      clearTimeout(this.gestureTimeout);
-      this.gestureTimeout = null;
-    }
-    if (this.animationInterval) {
-      clearInterval(this.animationInterval);
-      this.animationInterval = null;
-    }
-    this.state.isMoving = false;
-    this.notify();
+  public update(dtMs: number) {
+    this.animTime += dtMs / 1000;
   }
 
   /**
-   * Execute an expressive gesture safely with mechanical limits and automatic timeout return to rest
+   * Calculates real-time standalone floating hand coordinates and shapes.
+   * NO UPPER ARMS, NO FOREARMS, NO ELBOWS, NO SHOULDER CONNECTIONS.
    */
-  public executeGesture(gesture: ArmGesture, durationMs: number = 3000): void {
-    this.stopMovement();
+  public getRenderPose(w: number = 320, h: number = 160, timeOverride?: number): HandPoseRenderData {
+    const t = timeOverride !== undefined ? timeOverride : this.animTime;
+    const base = GESTURE_POSES[this.currentGesture] || GESTURE_POSES.IDLE;
 
-    // If no hardware is attached, we record the gesture in state without errors
-    this.state.activeGesture = gesture;
-    this.state.isMoving = true;
+    // Default resting values for standalone floating hands
+    let left: StandaloneHandState = {
+      x: w * 0.16,
+      y: h * 0.82 + Math.sin(t * 1.8) * 3,
+      rotation: 0.1,
+      shape: 'open_5_fingers',
+      visible: true,
+      scale: 1.35,
+      side: -1,
+      shoulder: 0,
+      elbow: 0,
+      wrist: 0,
+      handShape: 'open_5_fingers',
+    };
 
-    // Normalize abstract ARM_* commands to internal patterns
-    let normGesture: string = gesture;
-    if (gesture.startsWith('ARM_')) {
-      const suffix = gesture.substring(4);
-      if (suffix === 'HOLD_MIC') normGesture = 'SINGING';
-      else if (suffix === 'STIR') normGesture = 'COOKING';
-      else if (suffix === 'HOLD_BOOK') normGesture = 'READING';
-      else if (suffix === 'CELEBRATE') normGesture = 'HAPPY_MOVE';
-      else if (suffix === 'GREETING') normGesture = 'WAVE';
-      else normGesture = suffix;
-    }
+    let right: StandaloneHandState = {
+      x: w * 0.84,
+      y: h * 0.82 + Math.sin(t * 1.8 + 0.5) * 3,
+      rotation: -0.1,
+      shape: 'open_5_fingers',
+      visible: true,
+      scale: 1.35,
+      side: 1,
+      shoulder: 0,
+      elbow: 0,
+      wrist: 0,
+      handShape: 'open_5_fingers',
+    };
 
-    switch (normGesture) {
+    switch (this.currentGesture) {
       case 'WAVE':
-        // Wave right arm smoothly between 45 and 80 degrees
-        let waveDir = 1;
-        let step = 0;
-        this.state.leftAngle = 0;
-        this.state.rightAngle = 60;
-        this.state.rightHand = 'OPEN';
-        this.notify();
-
-        this.animationInterval = setInterval(() => {
-          step++;
-          if (step % 4 === 0) waveDir = -waveDir;
-          this.state.rightAngle = Math.min(85, Math.max(40, this.state.rightAngle + waveDir * 10));
-          this.notify();
-        }, 80);
-        break;
-
-      case 'POINT':
-        this.state.leftAngle = 0;
-        this.state.rightAngle = 55;
-        this.state.rightHand = 'POINT';
-        this.notify();
-        break;
-
-      case 'THUMBS_UP':
-        this.state.leftAngle = 0;
-        this.state.rightAngle = 45;
-        this.state.rightHand = 'THUMBS_UP';
-        this.notify();
-        break;
-
-      case 'HAPPY_MOVE':
-        // Both arms raised excitedly
-        this.state.leftAngle = 50;
-        this.state.rightAngle = 50;
-        this.state.leftHand = 'OPEN';
-        this.state.rightHand = 'OPEN';
-        this.notify();
-        break;
-
-      case 'SAD_MOVE':
-        // Arms drooping slightly backwards/down
-        this.state.leftAngle = -20;
-        this.state.rightAngle = -20;
-        this.state.leftHand = 'FIST';
-        this.state.rightHand = 'FIST';
-        this.notify();
-        break;
-
-      case 'THINKING':
-        // Right hand up near chin
-        this.state.leftAngle = 0;
-        this.state.rightAngle = 70;
-        this.state.rightHand = 'FIST';
-        this.notify();
-        break;
-
-      case 'READING':
-        // Both arms forward as if holding a book
-        this.state.leftAngle = 35;
-        this.state.rightAngle = 35;
-        this.state.leftHand = 'OPEN';
-        this.state.rightHand = 'OPEN';
-        this.notify();
-        break;
-
-      case 'COOKING':
-        // Alternating stirring/chopping arm movements
-        let stirStep = 0;
-        this.state.leftAngle = 25;
-        this.state.rightAngle = 40;
-        this.notify();
-
-        this.animationInterval = setInterval(() => {
-          stirStep++;
-          this.state.rightAngle = 30 + Math.sin(stirStep * 0.5) * 20;
-          this.state.leftAngle = 20 + Math.cos(stirStep * 0.5) * 15;
-          this.notify();
-        }, 120);
-        break;
-
-      case 'SINGING':
-        // Rhythmic gentle sway
-        let singStep = 0;
-        this.animationInterval = setInterval(() => {
-          singStep++;
-          this.state.leftAngle = Math.sin(singStep * 0.4) * 25;
-          this.state.rightAngle = Math.cos(singStep * 0.4) * 25;
-          this.notify();
-        }, 100);
+        // Standalone hand moves gently side-to-side on the right
+        left.visible = false;
+        right.visible = true;
+        right.shape = 'open_5_fingers';
+        right.x = w * 0.82 + Math.sin(t * 5.5) * 12;
+        right.y = h * 0.46 + Math.cos(t * 2.8) * 3;
+        right.rotation = (Math.sin(t * 5.5) * 22 * Math.PI) / 180;
+        right.scale = 1.45;
         break;
 
       case 'GREETING':
-        this.executeGesture('WAVE', durationMs);
-        return;
+        // Standalone open hand appears and performs a small welcoming wave
+        left.visible = false;
+        right.visible = true;
+        right.shape = 'open_5_fingers';
+        right.x = w * 0.80 + Math.sin(t * 3.5) * 8;
+        right.y = h * 0.42;
+        right.rotation = (Math.sin(t * 3.5) * 16 * Math.PI) / 180;
+        right.scale = 1.4;
+        break;
+
+      case 'POINT_LEFT':
+        left.visible = true;
+        right.visible = false;
+        left.shape = 'point_side';
+        left.x = w * 0.20 + Math.sin(t * 3) * 5;
+        left.y = h * 0.50;
+        left.rotation = 0;
+        left.scale = 1.4;
+        break;
+
+      case 'POINT_RIGHT':
+      case 'POINT':
+        left.visible = false;
+        right.visible = true;
+        right.shape = 'point_side';
+        right.x = w * 0.80 + Math.sin(t * 3) * 5;
+        right.y = h * 0.50;
+        right.rotation = 0;
+        right.scale = 1.4;
+        break;
+
+      case 'POINT_UP':
+        left.visible = false;
+        right.visible = true;
+        right.shape = 'point_up';
+        right.x = w * 0.80;
+        right.y = h * 0.35 + Math.sin(t * 3) * 4;
+        right.rotation = 0;
+        right.scale = 1.4;
+        break;
+
+      case 'THUMBS_UP':
+        // Standalone hand changes into a thumbs-up pose
+        left.visible = false;
+        right.visible = true;
+        right.shape = 'thumbs_up';
+        right.x = w * 0.80;
+        right.y = h * 0.48 + Math.sin(t * 3.5) * 4;
+        right.rotation = -0.05;
+        right.scale = 1.45;
+        break;
+
+      case 'CLAP':
+        // Two standalone hands move toward each other and separate
+        {
+          const clapProgress = Math.abs(Math.sin(t * 7)); // 0 = palms meet, 1 = separated
+          const clapY = h * 0.65;
+          left.visible = true;
+          right.visible = true;
+          left.shape = 'clap';
+          right.shape = 'clap';
+          left.x = w * 0.5 - 14 - clapProgress * 28;
+          left.y = clapY;
+          left.rotation = -0.08;
+          left.scale = 1.4;
+
+          right.x = w * 0.5 + 14 + clapProgress * 28;
+          right.y = clapY;
+          right.rotation = 0.08;
+          right.scale = 1.4;
+        }
+        break;
+
+      case 'OPEN_HAND':
+        // Two standalone hands floating open forward
+        left.visible = true;
+        right.visible = true;
+        left.shape = 'open_5_fingers';
+        right.shape = 'open_5_fingers';
+        left.x = w * 0.24;
+        left.y = h * 0.68 + Math.sin(t * 2) * 3;
+        left.rotation = 0.15;
+        left.scale = 1.4;
+
+        right.x = w * 0.76;
+        right.y = h * 0.68 + Math.sin(t * 2) * 3;
+        right.rotation = -0.15;
+        right.scale = 1.4;
+        break;
+
+      case 'CLOSE_HAND':
+        left.visible = true;
+        right.visible = true;
+        left.shape = 'fist';
+        right.shape = 'fist';
+        left.x = w * 0.24;
+        left.y = h * 0.68 + Math.sin(t * 2.5) * 2;
+        left.rotation = 0.12;
+        left.scale = 1.35;
+
+        right.x = w * 0.76;
+        right.y = h * 0.68 + Math.sin(t * 2.5) * 2;
+        right.rotation = -0.12;
+        right.scale = 1.35;
+        break;
+
+      case 'HOLD_MIC':
+        // A standalone hand moves into the microphone position and visually grips the microphone
+        left.visible = true;
+        left.shape = 'open_5_fingers';
+        left.x = w * 0.20;
+        left.y = h * 0.72 + Math.sin(t * 3) * 4;
+        left.rotation = 0.2;
+        left.scale = 1.3;
+
+        right.visible = true;
+        right.shape = 'grip';
+        right.x = w * 0.76; // Exact microphone handle position in FaceEngine
+        right.y = h * 0.66 + 12;
+        right.rotation = -0.22;
+        right.scale = 1.4;
+        break;
+
+      case 'STIR':
+        // A standalone hand moves around the pot while holding the cooking utensil
+        {
+          const orbitAngle = t * 4.5;
+          left.visible = true;
+          left.shape = 'grip';
+          left.x = w * 0.5 - 28; // Gripping pot left handle
+          left.y = h * 0.72 + 5;
+          left.rotation = 0.1;
+          left.scale = 1.3;
+
+          right.visible = true;
+          right.shape = 'grip';
+          right.x = w * 0.5 + Math.cos(orbitAngle) * 16 + 4;
+          right.y = h * 0.72 - 12 + Math.sin(orbitAngle) * 6;
+          right.rotation = Math.sin(orbitAngle) * 0.35 - 0.2;
+          right.scale = 1.4;
+        }
+        break;
+
+      case 'HOLD_BOOK':
+        // Two standalone hands appear near the book and move naturally with the reading animation
+        left.visible = true;
+        right.visible = true;
+        left.shape = 'grip';
+        right.shape = 'grip';
+        left.x = w * 0.5 - 34; // Left page edge
+        left.y = h * 0.78 + 4 + Math.sin(t * 1.5) * 1.5;
+        left.rotation = -0.15;
+        left.scale = 1.3;
+
+        right.x = w * 0.5 + 34; // Right page edge
+        right.y = h * 0.78 + 4 + Math.sin(t * 1.5) * 1.5;
+        right.rotation = 0.15;
+        right.scale = 1.3;
+        break;
+
+      case 'CELEBRATE':
+        left.visible = true;
+        right.visible = true;
+        left.shape = 'open_5_fingers';
+        right.shape = 'open_5_fingers';
+        left.x = w * 0.18;
+        left.y = h * 0.28 + Math.sin(t * 5) * 6;
+        left.rotation = 0.25;
+        left.scale = 1.4;
+
+        right.x = w * 0.82;
+        right.y = h * 0.28 - Math.sin(t * 5) * 6;
+        right.rotation = -0.25;
+        right.scale = 1.4;
+        break;
+
+      case 'THINKING':
+        // Standalone hand rests pensively near the lower cheek/chin
+        left.visible = false;
+        right.visible = true;
+        right.shape = 'pinch';
+        right.x = w * 0.65;
+        right.y = h * 0.68 + Math.sin(t * 2) * 2;
+        right.rotation = -0.18;
+        right.scale = 1.4;
+        break;
+
+      case 'LISTENING':
+        left.visible = true;
+        right.visible = true;
+        left.shape = 'open_5_fingers';
+        right.shape = 'open_5_fingers';
+        left.x = w * 0.14;
+        left.y = h * 0.46 + Math.sin(t * 2.5) * 3;
+        left.rotation = 0.25;
+        left.scale = 1.35;
+
+        right.x = w * 0.86;
+        right.y = h * 0.46 + Math.sin(t * 2.5) * 3;
+        right.rotation = -0.25;
+        right.scale = 1.35;
+        break;
+
+      case 'PLAYING':
+        left.visible = true;
+        right.visible = true;
+        left.shape = 'open_5_fingers';
+        right.shape = 'open_5_fingers';
+        left.x = w * 0.32 + Math.sin(t * 6) * 5;
+        left.y = h * 0.74 + Math.cos(t * 8) * 4;
+        left.rotation = 0.1;
+        left.scale = 1.3;
+
+        right.x = w * 0.68 - Math.sin(t * 6) * 5;
+        right.y = h * 0.74 - Math.cos(t * 8) * 4;
+        right.rotation = -0.1;
+        right.scale = 1.3;
+        break;
+
+      case 'RAISE_HAND':
+        left.visible = false;
+        right.visible = true;
+        right.shape = 'open_5_fingers';
+        right.x = w * 0.80;
+        right.y = h * 0.22 + Math.sin(t * 2) * 2;
+        right.rotation = 0;
+        right.scale = 1.45;
+        break;
 
       case 'IDLE':
       default:
-        this.resetToSafePosition();
-        return;
+        // Left and right floating hands hover gently at bottom corners
+        break;
     }
 
-    // Safety timeout: automatically return to safe resting position
-    this.gestureTimeout = setTimeout(() => {
-      this.resetToSafePosition();
-    }, durationMs);
+    // Update legacy telemetry properties so visualizers don't break
+    left.handShape = left.shape;
+    right.handShape = right.shape;
+    left.wrist = Math.round((left.rotation * 180) / Math.PI);
+    right.wrist = Math.round((right.rotation * 180) / Math.PI);
+
+    return {
+      left,
+      right,
+      propHeld: base.propHeld,
+      gesture: this.currentGesture,
+    };
   }
 }
 

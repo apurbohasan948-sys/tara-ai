@@ -1,407 +1,521 @@
+/**
+ * TabFaceDebug.tsx
+ * Developer Real-time Visual Debugger Panel
+ *
+ * Exposes all internal engine parameters in a high-density diagnostic console:
+ * - Current Activity
+ * - Current Emotion
+ * - Current Expression
+ * - Current Scene
+ * - Current Voice State
+ * - Current Mouth State
+ * - Current Eye State
+ * - Current Arm Gesture
+ * - Current Prop
+ * - Current Animation Frame
+ * - Audio Amplitude (real-time meter)
+ * - Voice Queue State & items
+ */
+
 import React, { useEffect, useState } from 'react';
-import { expressionManager } from '../services/ExpressionManager';
-import { activitySceneManager } from '../services/ActivitySceneManager';
-import { armController } from '../services/ArmController';
 import {
-  RobotEmotion,
-  RobotActivity,
-  ArmGesture,
-  AnimationEventLogEntry,
-  ScenePropsState,
-  SceneType,
-} from '../types';
-import {
-  Bug,
   Activity,
-  Sparkles,
-  Flame,
-  CloudRain,
-  Mic,
-  BookOpen,
-  Music,
-  Trash2,
-  Clock,
+  Cpu,
+  Eye,
+  Hand,
   Layers,
+  Mic,
   Smile,
-  Zap,
+  Volume2,
+  Terminal,
+  CheckCircle2,
+  AlertCircle,
+  Radio,
 } from 'lucide-react';
+import { activitySceneManager } from '../services/ActivitySceneManager';
+import { animationCoordinator, CoordinatedFrame } from '../services/AnimationCoordinator';
+import { armController } from '../services/ArmController';
+import { voiceManager } from '../services/VoiceManager';
+import { gameManager } from '../services/GameManager';
+import {
+  QueuedVoiceItem,
+  TaraActivity,
+  TaraArmGesture,
+  TaraExpression,
+  TaraMouthState,
+  VoiceQueueState,
+  VoiceState,
+} from '../types';
 
-interface TabFaceDebugProps {
-  currentEmotion: RobotEmotion;
-  currentActivity: RobotActivity;
-  onEmotionChange: (emotion: RobotEmotion) => void;
-  onActivityChange: (activity: RobotActivity) => void;
-}
-
-export const TabFaceDebug: React.FC<TabFaceDebugProps> = ({
-  currentEmotion,
-  currentActivity,
-  onEmotionChange,
-  onActivityChange,
-}) => {
-  const [logEntries, setLogEntries] = useState<AnimationEventLogEntry[]>([]);
-  const [propsState, setPropsState] = useState<ScenePropsState>(activitySceneManager.getProps());
-  const [currentScene, setCurrentScene] = useState<SceneType>(activitySceneManager.getCurrentScene());
-  const [armState, setArmState] = useState(armController.getState());
-  const [tempDuration, setTempDuration] = useState(2500);
-  const [filterCategory, setFilterCategory] = useState<string>('ALL');
+export const TabFaceDebug: React.FC = () => {
+  const [frame, setFrame] = useState<CoordinatedFrame>(animationCoordinator.getCoordinatedFrame());
+  const [voiceState, setVoiceState] = useState<VoiceState>(voiceManager.getVoiceState());
+  const [queueState, setQueueState] = useState<VoiceQueueState>(voiceManager.getQueueState());
+  const [amplitude, setAmplitude] = useState<number>(0);
+  const [voiceQueue, setVoiceQueue] = useState<QueuedVoiceItem[]>([]);
+  const [frameCount, setFrameCount] = useState<number>(0);
 
   useEffect(() => {
-    const unsubLog = activitySceneManager.subscribeLog((entries) => setLogEntries([...entries]));
-    const unsubScene = activitySceneManager.subscribeScene((scene, props) => {
-      setCurrentScene(scene);
-      setPropsState({ ...props });
+    const unsubVoice = voiceManager.subscribe((st) => {
+      setVoiceState(st.voiceState);
+      setQueueState(st.queueState);
+      setAmplitude(st.amplitude);
+      setVoiceQueue(voiceManager.getQueue());
     });
-    const unsubArm = armController.subscribe((s) => setArmState({ ...s }));
+
+    const timer = setInterval(() => {
+      setFrame(animationCoordinator.getCoordinatedFrame());
+      setFrameCount((prev) => (prev + 1) % 60);
+      setVoiceQueue(voiceManager.getQueue());
+    }, 66); // ~15Hz telemetry update
 
     return () => {
-      unsubLog();
-      unsubScene();
-      unsubArm();
+      unsubVoice();
+      clearInterval(timer);
     };
   }, []);
 
-  const effectiveEmotion = expressionManager.getCurrentEffectiveEmotion();
-  const baseEmotion = expressionManager.getBaseEmotion();
-  const isTemp = expressionManager.isTemporaryActive();
-  const profile = expressionManager.getProfile(effectiveEmotion);
-  const layerState = expressionManager.getLayerState();
-
-  const allEmotions = expressionManager.getAvailableEmotions();
-
-  const handleTestEmotion = (emo: RobotEmotion, temporary: boolean) => {
-    if (temporary) {
-      expressionManager.pushTemporaryExpression(emo, tempDuration);
-      activitySceneManager.logEvent('EMOTION', `Pushed temporary expression: ${emo} (${tempDuration}ms)`);
-    } else {
-      expressionManager.setBaseEmotion(emo);
-      onEmotionChange(emo);
-      activitySceneManager.logEvent('EMOTION', `Set base emotion: ${emo}`);
+  const getSceneDetail = () => {
+    switch (frame.activity) {
+      case 'COOKING':
+        return `Cooking Scene [Stage: ${activitySceneManager.getCookingState().stage}, FlameFrame: ${activitySceneManager.getCookingState().flameFrame}]`;
+      case 'SINGING':
+        return `Singing Scene [Stage: ${activitySceneManager.getSingingState().stage}, MicH: ${activitySceneManager.getSingingState().micHeight.toFixed(2)}]`;
+      case 'READING':
+        return `Reading Scene [PageFlip: ${activitySceneManager.getReadingState().pageFlip.toFixed(2)}, Line: ${activitySceneManager.getReadingState().readingLine}]`;
+      case 'MUSIC':
+        return `Music Scene [Headphones On, Equalizer Bars: 8]`;
+      case 'SLEEPING':
+        return `Sleeping Scene [ZZZ Particles: ${activitySceneManager.getSleepingState().zzzParticles.length}, Breath: ${activitySceneManager.getSleepingState().breathCycle.toFixed(2)}]`;
+      default:
+        return 'Standard Idle Desktop Scene';
     }
   };
 
-  const handleToggleProp = (propKey: keyof ScenePropsState) => {
-    const nextVal = !propsState[propKey];
-    activitySceneManager.setProp(propKey, nextVal);
-  };
-
-  const handleTestArm = (gesture: ArmGesture) => {
-    armController.triggerGesture(gesture, 3000);
-    activitySceneManager.logEvent('ARM', `Triggered arm gesture: ${gesture}`);
-  };
-
-  const handleClearLog = () => {
-    activitySceneManager.logEvent('SYSTEM', 'Log cleared by user');
-  };
-
-  const filteredLogs = filterCategory === 'ALL'
-    ? logEntries
-    : logEntries.filter((e) => e.category === filterCategory);
-
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl font-bold text-slate-100 flex items-center gap-2">
-            <Bug className="w-5 h-5 text-cyan-400" />
-            Face & Animation Event Debug Panel
-          </h2>
-          <p className="text-xs text-slate-400 mt-1">
-            Real-time pipeline diagnostics, 45+ expression triggers, scene prop controls, and timeline event telemetry.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-mono px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300">
-            Priority: <strong className="text-cyan-400">{activitySceneManager.getCurrentPriority()}</strong>
-          </span>
-          <span className="text-xs font-mono px-2.5 py-1 rounded bg-slate-800 border border-slate-700 text-slate-300">
-            Scene: <strong className="text-amber-400">{currentScene}</strong>
-          </span>
-        </div>
-      </div>
-
-      {/* Real-time State & Layers Inspector */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {/* Layer 1 & 2: Emotion State */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            <Smile className="w-4 h-4 text-cyan-400" />
-            Emotion Pipeline
+    <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 text-slate-100 flex flex-col gap-6">
+      {/* Top Header */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+            <Terminal className="w-5 h-5" />
           </div>
-          <div className="text-sm font-mono text-slate-200">
-            Visible: <strong className="text-cyan-400 font-bold">{effectiveEmotion}</strong>
-          </div>
-          <div className="text-xs font-mono text-slate-400">
-            Base: <span className="text-slate-300">{baseEmotion}</span>
-          </div>
-          <div className="text-xs font-mono">
-            Overlay Active: {isTemp ? <span className="text-amber-400 font-bold">YES (Temp)</span> : <span className="text-slate-500">NO</span>}
-          </div>
-          {isTemp && (
-            <button
-              onClick={() => expressionManager.clearTemporaryExpression()}
-              className="text-[10px] px-2 py-0.5 rounded bg-rose-950 border border-rose-800 text-rose-300 hover:bg-rose-900"
-            >
-              Clear Overlay
-            </button>
-          )}
-        </div>
-
-        {/* Layer 3: Activity & Scene */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            <Activity className="w-4 h-4 text-emerald-400" />
-            Activity / Scene
-          </div>
-          <div className="text-sm font-mono text-slate-200">
-            Activity: <strong className="text-emerald-400 font-bold">{currentActivity}</strong>
-          </div>
-          <div className="text-xs font-mono text-slate-400">
-            Scene: <span className="text-slate-300">{currentScene}</span>
-          </div>
-          <div className="text-xs font-mono text-slate-400">
-            Stage: <span className="text-amber-400">{activitySceneManager.getCurrentStage()}</span>
-          </div>
-        </div>
-
-        {/* Eye & Mouth Micro-State */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            <Layers className="w-4 h-4 text-purple-400" />
-            Face Geometry
-          </div>
-          <div className="text-xs font-mono text-slate-300">
-            Eye Shape: <span className="text-purple-400 font-semibold">{profile.eyeShape}</span>
-          </div>
-          <div className="text-xs font-mono text-slate-300">
-            Mouth: <span className="text-purple-400 font-semibold">{profile.mouthShape}</span>
-          </div>
-          <div className="text-xs font-mono text-slate-400">
-            Pupil: {profile.pupilDilation.toFixed(2)}x | Blink: {profile.eyeBlinkPattern || 'NORMAL'}
-          </div>
-        </div>
-
-        {/* Arm Servos State */}
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 uppercase tracking-wider">
-            <Zap className="w-4 h-4 text-amber-400" />
-            Servos & Gestures
-          </div>
-          <div className="text-xs font-mono text-slate-300">
-            Gesture: <span className="text-amber-400 font-semibold">{armState.activeGesture}</span>
-          </div>
-          <div className="text-xs font-mono text-slate-400">
-            Left: {armState.leftAngle}° ({armState.leftHand})
-          </div>
-          <div className="text-xs font-mono text-slate-400">
-            Right: {armState.rightAngle}° ({armState.rightHand})
-          </div>
-        </div>
-      </div>
-
-      {/* Manual Props Toggles */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
-        <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-          <Flame className="w-4 h-4 text-amber-400" />
-          Interactive Scene Props (Immediate OLED Render Overrides)
-        </h3>
-        <p className="text-xs text-slate-400">
-          Toggle scene props to verify layered rendering on the OLED canvas in real-time.
-        </p>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5">
-          {[
-            { key: 'flame', label: 'Stove Flame', icon: Flame, activeColor: 'bg-amber-600 text-white' },
-            { key: 'steam', label: 'Pot Steam', icon: CloudRain, activeColor: 'bg-sky-600 text-white' },
-            { key: 'potCooking', label: 'Cooking Pot', icon: Flame, activeColor: 'bg-orange-600 text-white' },
-            { key: 'spoonStirring', label: 'Stirring Spoon', icon: Activity, activeColor: 'bg-amber-500 text-slate-950' },
-            { key: 'microphone', label: 'Microphone', icon: Mic, activeColor: 'bg-cyan-600 text-white' },
-            { key: 'musicNotes', label: 'Music Notes', icon: Music, activeColor: 'bg-pink-600 text-white' },
-            { key: 'book', label: 'Reading Book', icon: BookOpen, activeColor: 'bg-emerald-600 text-white' },
-          ].map((item) => {
-            const isAct = !!propsState[item.key as keyof ScenePropsState];
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.key}
-                onClick={() => handleToggleProp(item.key as keyof ScenePropsState)}
-                className={`flex flex-col items-center justify-center p-3 rounded-lg border text-xs font-medium transition ${
-                  isAct
-                    ? `${item.activeColor} border-transparent shadow-md`
-                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-                }`}
-              >
-                <Icon className="w-4 h-4 mb-1" />
-                <span>{item.label}</span>
-                <span className="text-[10px] font-mono mt-0.5 opacity-80">{isAct ? 'ON' : 'OFF'}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Arm Gestures Trigger Panel */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
-        <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-          <Zap className="w-4 h-4 text-cyan-400" />
-          Arm & Hand Gesture Test Triggers
-        </h3>
-        <div className="flex flex-wrap gap-2">
-          {[
-            { id: 'ARM_WAVE', label: 'Wave Right Arm' },
-            { id: 'ARM_CELEBRATE', label: 'Celebrate / Both Arms' },
-            { id: 'ARM_STIR', label: 'Cooking Stir Spoon' },
-            { id: 'ARM_HOLD_MIC', label: 'Hold Microphone' },
-            { id: 'ARM_HOLD_BOOK', label: 'Hold Book' },
-            { id: 'ARM_THUMBS_UP', label: 'Thumbs Up' },
-            { id: 'ARM_POINT', label: 'Point Forward' },
-            { id: 'ARM_THINK', label: 'Thinking Hand' },
-            { id: 'ARM_SAD_MOVE', label: 'Droop Arms (Sad)' },
-            { id: 'ARM_IDLE', label: 'Reset Safe Rest' },
-          ].map((g) => (
-            <button
-              key={g.id}
-              onClick={() => handleTestArm(g.id as ArmGesture)}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 border border-slate-700 transition"
-            >
-              {g.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Comprehensive 45+ Facial Expressions Tester */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
           <div>
-            <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
-              Facial Expression Catalog (45+ Parametric Expressions)
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              TARA Layered Diagnostic Console
+              <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono border border-emerald-500/30 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                Pipeline Synced
+              </span>
             </h3>
             <p className="text-xs text-slate-400">
-              Click to trigger as Base Emotion (persistent) or Temporary Reaction (with auto-revert).
+              Live inspection of Emotion → ExpressionManager → FaceState → Layered Renderer
             </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400">Temp Duration:</span>
-            <select
-              value={tempDuration}
-              onChange={(e) => setTempDuration(Number(e.target.value))}
-              className="px-2 py-1 text-xs bg-slate-800 border border-slate-700 rounded text-slate-200"
-            >
-              <option value={1500}>1.5s</option>
-              <option value={2500}>2.5s</option>
-              <option value={4000}>4.0s</option>
-              <option value={6000}>6.0s</option>
-            </select>
           </div>
         </div>
 
-        {/* Expression Buttons Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-          {allEmotions.map((emo) => {
-            const isCurrent = effectiveEmotion === emo;
-            return (
-              <div key={emo} className="flex flex-col gap-1">
-                <button
-                  onClick={() => handleTestEmotion(emo, false)}
-                  className={`px-2 py-1.5 rounded text-[11px] font-mono font-medium truncate text-center border transition ${
-                    isCurrent
-                      ? 'bg-cyan-500 text-slate-950 border-cyan-400 font-bold shadow-md shadow-cyan-500/20'
-                      : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-750'
-                  }`}
-                  title={`Set Base: ${emo}`}
-                >
-                  {emo}
-                </button>
-                <button
-                  onClick={() => handleTestEmotion(emo, true)}
-                  className="text-[9px] font-mono py-0.5 px-1 rounded bg-slate-950 hover:bg-slate-800 text-cyan-400 border border-slate-800 text-center transition"
-                  title={`Test as temporary reaction (${tempDuration}ms)`}
-                >
-                  +Temp
-                </button>
-              </div>
-            );
-          })}
+        <div className="flex items-center gap-2 font-mono text-xs text-slate-400">
+          <span className="flex items-center gap-1">
+            <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
+            LIVE TELEMETRY
+          </span>
+          <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+            Tick: {frameCount}/60
+          </span>
         </div>
       </div>
 
-      {/* Animation Event Log (Telemetry) */}
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-sm font-semibold text-slate-200">Animation Event Telemetry Log</h3>
-            <span className="text-xs font-mono text-slate-500">({logEntries.length} events)</span>
+      {/* Main Diagnostic Telemetry Grid (Exact Section 23 specification) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 text-xs font-mono">
+        {/* 1. Activity & Scene */}
+        <div className="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700/60 space-y-2">
+          <div className="text-slate-400 font-bold flex items-center gap-2 border-b border-slate-700/50 pb-1.5">
+            <Activity className="w-4 h-4 text-purple-400" />
+            ACTIVITY & SCENE LAYER
           </div>
-
-          <div className="flex items-center gap-2">
-            {/* Category Filter */}
-            <div className="flex gap-1 text-[11px] font-mono">
-              {['ALL', 'ACTIVITY', 'SCENE', 'PROP', 'GAME', 'ARM', 'EMOTION'].map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setFilterCategory(cat)}
-                  className={`px-2 py-0.5 rounded border transition ${
-                    filterCategory === cat
-                      ? 'bg-cyan-950 border-cyan-600 text-cyan-300 font-bold'
-                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+          <div className="space-y-1.5 text-slate-300">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Current Activity:</span>
+              <span className="text-purple-300 font-bold">{frame.activity}</span>
             </div>
-
-            <button
-              onClick={handleClearLog}
-              className="flex items-center gap-1 ml-2 text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 border border-slate-700 transition"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear
-            </button>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Current Scene:</span>
+              <span className="text-slate-200 text-right text-[11px] truncate max-w-[170px]">
+                {getSceneDetail()}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Current Prop:</span>
+              <span className="text-amber-300 font-bold">{frame.prop}</span>
+            </div>
           </div>
         </div>
 
-        {/* Event List */}
-        <div className="space-y-1.5 max-h-72 overflow-y-auto font-mono text-xs pr-1">
-          {filteredLogs.length === 0 ? (
-            <div className="text-slate-500 text-center py-6 text-xs italic">
-              No events recorded yet. Trigger an activity, game move, or emotion to log events.
+        {/* 2. Emotion & Expression */}
+        <div className="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700/60 space-y-2">
+          <div className="text-slate-400 font-bold flex items-center gap-2 border-b border-slate-700/50 pb-1.5">
+            <Smile className="w-4 h-4 text-amber-400" />
+            EMOTION & EXPRESSION LAYER
+          </div>
+          <div className="space-y-1.5 text-slate-300">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Current Emotion:</span>
+              <span className="text-amber-300 font-bold capitalize">{frame.emotion}</span>
             </div>
-          ) : (
-            filteredLogs.map((entry) => (
-              <div
-                key={entry.id}
-                className="flex items-start gap-3 p-2 rounded bg-slate-950 border border-slate-800/80 hover:border-slate-700 transition"
-              >
-                <span className="text-slate-500 text-[10px] whitespace-nowrap">{entry.timestamp}</span>
-                <span
-                  className={`px-1.5 py-0.2 text-[9px] rounded font-bold uppercase whitespace-nowrap ${
-                    entry.category === 'ACTIVITY'
-                      ? 'bg-emerald-950 border border-emerald-800 text-emerald-300'
-                      : entry.category === 'SCENE'
-                      ? 'bg-purple-950 border border-purple-800 text-purple-300'
-                      : entry.category === 'PROP'
-                      ? 'bg-amber-950 border border-amber-800 text-amber-300'
-                      : entry.category === 'GAME'
-                      ? 'bg-cyan-950 border border-cyan-800 text-cyan-300'
-                      : entry.category === 'ARM'
-                      ? 'bg-sky-950 border border-sky-800 text-sky-300'
-                      : entry.category === 'EMOTION'
-                      ? 'bg-pink-950 border border-pink-800 text-pink-300'
-                      : 'bg-slate-800 border border-slate-700 text-slate-400'
-                  }`}
-                >
-                  {entry.category}
+            <div className="flex justify-between">
+              <span className="text-slate-400">Current Expression:</span>
+              <span className="text-cyan-300 font-bold">{frame.expression}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Blush / Cheeks:</span>
+              <span className="text-slate-200">
+                {frame.blush ? `Active (${(frame.blushIntensity * 100).toFixed(0)}%)` : 'Off'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Eyes & Pupils */}
+        <div className="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700/60 space-y-2">
+          <div className="text-slate-400 font-bold flex items-center gap-2 border-b border-slate-700/50 pb-1.5">
+            <Eye className="w-4 h-4 text-cyan-400" />
+            EYE & PUPIL STATE
+          </div>
+          <div className="space-y-1.5 text-slate-300">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Current Eye State:</span>
+              <span className="text-cyan-300 font-bold">{frame.eyeState}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Pupil Offset (X, Y):</span>
+              <span className="text-slate-200">
+                ({frame.pupilOffsetX.toFixed(2)}, {frame.pupilOffsetY.toFixed(2)})
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Eyebrow Angle / Offset:</span>
+              <span className="text-slate-200">
+                {frame.eyebrowAngle}° / {frame.eyebrowOffset}px
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. Voice & Mouth Synchronization */}
+        <div className="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700/60 space-y-2">
+          <div className="text-slate-400 font-bold flex items-center gap-2 border-b border-slate-700/50 pb-1.5">
+            <Volume2 className="w-4 h-4 text-emerald-400" />
+            VOICE & MOUTH SYNCHRONIZATION
+          </div>
+          <div className="space-y-1.5 text-slate-300">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Current Voice State:</span>
+              <span className={`font-bold ${voiceState === 'VOICE_SPEAKING' ? 'text-emerald-400' : 'text-slate-300'}`}>
+                {voiceState}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Current Mouth State:</span>
+              <span className="text-pink-400 font-bold">{frame.mouthState}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-slate-400">Audio Amplitude:</span>
+              <div className="flex items-center gap-2">
+                <div className="w-20 h-2 rounded bg-slate-900 overflow-hidden border border-slate-700">
+                  <div
+                    className="h-full bg-emerald-400 transition-all duration-75"
+                    style={{ width: `${Math.min(100, amplitude * 100)}%` }}
+                  />
+                </div>
+                <span className="text-emerald-300 text-[11px] w-8 text-right">
+                  {(amplitude * 100).toFixed(0)}%
                 </span>
-                <span className="text-slate-200 flex-1">{entry.message}</span>
               </div>
-            ))
-          )}
+            </div>
+          </div>
+        </div>
+
+        {/* 5. Standalone Floating Hands Display State */}
+        <div className="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700/60 space-y-2">
+          <div className="text-slate-400 font-bold flex items-center gap-2 border-b border-slate-700/50 pb-1.5">
+            <Hand className="w-4 h-4 text-indigo-400" />
+            STANDALONE FLOATING HANDS
+          </div>
+          <div className="space-y-1.5 text-slate-300">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Current Gesture:</span>
+              <span className="text-indigo-300 font-bold">{frame.armGesture}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Arm / Elbow Segments:</span>
+              <span className="text-emerald-400 font-bold">REMOVED (Zero)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Physical Servos:</span>
+              <span className="text-emerald-400 font-bold">0 (Pure Vector)</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Head Movement:</span>
+              <span className="text-emerald-400 font-bold">FIXED (Zero Jitter)</span>
+            </div>
+          </div>
+        </div>
+
+        {/* 6. Voice Queue Manager */}
+        <div className="p-3.5 rounded-xl bg-slate-800/70 border border-slate-700/60 space-y-2">
+          <div className="text-slate-400 font-bold flex items-center gap-2 border-b border-slate-700/50 pb-1.5">
+            <Layers className="w-4 h-4 text-teal-400" />
+            VOICE QUEUE & SEQUENCER
+          </div>
+          <div className="space-y-1.5 text-slate-300">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Voice Queue State:</span>
+              <span className="text-teal-300 font-bold">{queueState}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Queued Messages:</span>
+              <span className="text-slate-200">{voiceQueue.length} pending</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Interruption Capability:</span>
+              <span className="text-cyan-400">Enabled (Instant Cut)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Voice Interruption Test Bar */}
+      <div className="p-3.5 rounded-xl bg-slate-800/40 border border-slate-700/50 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="text-slate-300">
+          <span className="font-bold text-white">Voice Queue Sequential Test:</span> Enqueue 3 sequential sentences and verify mouth opens and closes synchronously without overlap.
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              voiceManager.speak("Hello there! First sentence in queue.", 'happy');
+              voiceManager.speak("How is your afternoon going so far?", 'curious');
+              voiceManager.speak("Let's build something extraordinary together!", 'excited');
+            }}
+            className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold font-mono"
+          >
+            Queue 3 Sentences
+          </button>
+          <button
+            onClick={() => {
+              voiceManager.interrupt();
+            }}
+            className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold font-mono"
+          >
+            INTERRUPT / STOP
+          </button>
+        </div>
+      </div>
+      {/* Interactive Quick Trigger Testing Deck */}
+      <div className="space-y-4 pt-2 border-t border-slate-800">
+        <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
+          <Terminal className="w-4 h-4 text-cyan-400" />
+          Interactive Debug Trigger Deck (Instant Execution)
+        </h4>
+
+        {/* 1. Activities */}
+        <div className="space-y-1.5">
+          <span className="text-[11px] font-mono text-slate-400">Trigger Activity Scene:</span>
+          <div className="flex flex-wrap gap-2">
+            {(['IDLE', 'COOKING', 'SINGING', 'READING', 'MUSIC', 'SLEEPING'] as TaraActivity[]).map((act) => (
+              <button
+                key={act}
+                onClick={() => {
+                  activitySceneManager.setActivity(act);
+                  animationCoordinator.setActivity(act);
+                }}
+                className={`px-2.5 py-1 rounded text-xs font-mono transition-colors ${
+                  frame.activity === act
+                    ? 'bg-cyan-600 text-white font-bold'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                {act}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 2. Standalone Floating Hand Gestures (All 18 + 11 Required Tests) */}
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-mono text-slate-400">Trigger Standalone Hand Gesture (5-Finger Solid Floating Hands • Zero Arms):</span>
+            <span className="text-[10px] text-emerald-400 font-mono">No Motors • Standard ESP32</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                'IDLE',
+                'OPEN_HAND',
+                'WAVE',
+                'THUMBS_UP',
+                'POINT',
+                'CLAP',
+                'HOLD_MIC',
+                'STIR',
+                'HOLD_BOOK',
+                'CELEBRATE',
+                'THINKING',
+                'GREETING',
+                'POINT_LEFT',
+                'POINT_RIGHT',
+                'POINT_UP',
+                'CLOSE_HAND',
+                'LISTENING',
+                'PLAYING',
+              ] as TaraArmGesture[]
+            ).map((g) => (
+              <button
+                key={g}
+                onClick={() => {
+                  armController.setGesture(g);
+                  animationCoordinator.setArmGesture(g);
+                }}
+                className={`px-2.5 py-1 rounded text-[11px] font-mono transition-colors ${
+                  frame.armGesture === g
+                    ? 'bg-indigo-600 text-white font-bold shadow-md shadow-indigo-900/40'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                {g}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 3. Key Expressions */}
+        <div className="space-y-1.5">
+          <span className="text-[11px] font-mono text-slate-400">Trigger Facial Expression:</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                'happy',
+                'big_smile',
+                'laughing',
+                'excited',
+                'curious',
+                'confused',
+                'surprised',
+                'sad',
+                'angry',
+                'sleepy',
+                'shy',
+                'blushing',
+                'scared',
+                'worried',
+                'focused',
+                'thinking',
+                'amazed',
+                'proud',
+                'bored',
+                'playful',
+                'teasing',
+                'wink',
+                'celebrating',
+                'neutral',
+              ] as TaraExpression[]
+            ).map((exp) => (
+              <button
+                key={exp}
+                onClick={() => animationCoordinator.setExpression(exp)}
+                className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${
+                  frame.expression === exp
+                    ? 'bg-amber-600 text-white font-bold'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                {exp}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 4. Mouth States */}
+        <div className="space-y-1.5">
+          <span className="text-[11px] font-mono text-slate-400">Trigger Mouth State:</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                'CLOSED',
+                'SMALL',
+                'SMILE',
+                'OPEN_SMALL',
+                'OPEN_MEDIUM',
+                'OPEN_WIDE',
+                'O_SHAPE',
+                'A_SHAPE',
+                'E_SHAPE',
+                'LAUGHING',
+                'SINGING',
+                'SPEAKING',
+              ] as TaraMouthState[]
+            ).map((m) => (
+              <button
+                key={m}
+                onClick={() => animationCoordinator.setMouthState(m)}
+                className={`px-2 py-1 rounded text-[11px] font-mono transition-colors ${
+                  frame.mouthState === m
+                    ? 'bg-pink-600 text-white font-bold'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                }`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 5. Trigger Companion Games */}
+        <div className="space-y-1.5">
+          <span className="text-[11px] font-mono text-slate-400">Launch Interactive Games:</span>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => gameManager.startTicTacToe()}
+              className="px-2.5 py-1 rounded bg-cyan-900/60 hover:bg-cyan-800 text-cyan-300 border border-cyan-700 text-xs font-mono"
+            >
+              Tic-Tac-Toe
+            </button>
+            <button
+              onClick={() => gameManager.startRockPaperScissors()}
+              className="px-2.5 py-1 rounded bg-purple-900/60 hover:bg-purple-800 text-purple-300 border border-purple-700 text-xs font-mono"
+            >
+              Rock Paper Scissors
+            </button>
+            <button
+              onClick={() => gameManager.startMemoryMatch()}
+              className="px-2.5 py-1 rounded bg-emerald-900/60 hover:bg-emerald-800 text-emerald-300 border border-emerald-700 text-xs font-mono"
+            >
+              Memory Match
+            </button>
+            <button
+              onClick={() => gameManager.startGuessNumber()}
+              className="px-2.5 py-1 rounded bg-amber-900/60 hover:bg-amber-800 text-amber-300 border border-amber-700 text-xs font-mono"
+            >
+              Guess Number
+            </button>
+            <button
+              onClick={() => gameManager.startReflex()}
+              className="px-2.5 py-1 rounded bg-rose-900/60 hover:bg-rose-800 text-rose-300 border border-rose-700 text-xs font-mono"
+            >
+              Reflex Game
+            </button>
+            <button
+              onClick={() => gameManager.startSimonSays()}
+              className="px-2.5 py-1 rounded bg-blue-900/60 hover:bg-blue-800 text-blue-300 border border-blue-700 text-xs font-mono"
+            >
+              Simon Says
+            </button>
+            <button
+              onClick={() => gameManager.startTrivia()}
+              className="px-2.5 py-1 rounded bg-teal-900/60 hover:bg-teal-800 text-teal-300 border border-teal-700 text-xs font-mono"
+            >
+              Hardware Trivia
+            </button>
+          </div>
         </div>
       </div>
     </div>

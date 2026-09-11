@@ -1,148 +1,138 @@
-import {
-  RobotActivity,
-  RobotEmotion,
-  RobotState,
-  RobotActionName,
-} from '../types';
-import { actionManager } from './ActionManager';
-import { activityManager } from './ActivityManager';
+/**
+ * TaraBehaviorManager.ts
+ * Coordinates autonomous behaviors, presence reactions, idle fidgets,
+ * and boredom timers.
+ */
+
+import { TaraActivity, TaraPersonality } from '../types';
+import { activitySceneManager } from './ActivitySceneManager';
+import { animationCoordinator } from './AnimationCoordinator';
 import { armController } from './ArmController';
 import { emotionEngine } from './EmotionEngine';
-import { presenceManager } from './PresenceManager';
 import { voiceManager } from './VoiceManager';
-import { musicController } from './MusicController';
-
-export interface BehaviorDispatchContext {
-  setState: (st: RobotState) => void;
-  setEmotion: (em: RobotEmotion) => void;
-  setActivity: (act: RobotActivity) => void;
-}
 
 export class TaraBehaviorManager {
-  private currentBehavior: string = 'IDLE';
-  private listeners: ((behavior: string) => void)[] = [];
+  private autonomousEnabled: boolean = true;
+  private idleTimeSec: number = 0;
+  private personality: TaraPersonality = {
+    cheerfulness: 85,
+    curiosity: 75,
+    sassiness: 40,
+    energy: 70,
+    empathy: 90,
+  };
 
-  constructor() {
-    // Connect autonomous presence greeting
-    presenceManager.setCallbacks(
-      (presenceState, info) => {
-        // Can react to presence state changes
-      },
-      () => {
-        // Autonomous Greeting triggered by presence sensor cooldown!
-        this.triggerGreeting();
-      }
-    );
+  private listeners: (() => void)[] = [];
+
+  public getPersonality(): TaraPersonality {
+    return { ...this.personality };
   }
 
-  public subscribe(listener: (behavior: string) => void): () => void {
-    this.listeners.push(listener);
-    listener(this.currentBehavior);
+  public setPersonality(p: Partial<TaraPersonality>) {
+    this.personality = { ...this.personality, ...p };
+    this.notify();
+  }
+
+  public isAutonomous(): boolean {
+    return this.autonomousEnabled;
+  }
+
+  public setAutonomous(enabled: boolean) {
+    this.autonomousEnabled = enabled;
+    this.notify();
+  }
+
+  public subscribe(cb: () => void) {
+    this.listeners.push(cb);
     return () => {
-      this.listeners = this.listeners.filter((l) => l !== listener);
+      this.listeners = this.listeners.filter((l) => l !== cb);
     };
   }
 
   private notify() {
-    for (const l of this.listeners) {
-      l(this.currentBehavior);
+    this.listeners.forEach((cb) => cb());
+  }
+
+  public onUserPresence(distanceCm: number) {
+    this.idleTimeSec = 0;
+    if (!this.autonomousEnabled) return;
+
+    if (activitySceneManager.getActivity() === 'SLEEPING') {
+      // Wake up with gentle surprise & happy greeting
+      activitySceneManager.setActivity('IDLE');
+      animationCoordinator.setExpression('surprised');
+      armController.setGesture('GREETING');
+      voiceManager.speak("Oh! You're back! Hello there!", 'happy');
+      setTimeout(() => {
+        animationCoordinator.setExpression('happy');
+        armController.setGesture('WAVE');
+      }, 1200);
     }
   }
 
-  public getCurrentBehavior(): string {
-    return this.currentBehavior;
+  public triggerActivity(activity: TaraActivity) {
+    this.idleTimeSec = 0;
+    activitySceneManager.setActivity(activity);
+
+    switch (activity) {
+      case 'SINGING':
+        armController.setGesture('HOLD_MIC');
+        animationCoordinator.setExpression('singing');
+        voiceManager.speak("La la la~ Singing a little desktop melody for you!", 'excited');
+        break;
+
+      case 'COOKING':
+        armController.setGesture('STIR');
+        animationCoordinator.setExpression('focused');
+        voiceManager.speak("Turning on the stove! Today's special meal is on the way.", 'happy');
+        break;
+
+      case 'READING':
+        armController.setGesture('HOLD_BOOK');
+        animationCoordinator.setExpression('focused');
+        voiceManager.speak("Enjoying a wonderful chapter in my favorite book.", 'neutral');
+        break;
+
+      case 'MUSIC':
+        armController.setGesture('IDLE');
+        animationCoordinator.setExpression('happy');
+        voiceManager.speak("Putting on headphones! Let the rhythm flow.", 'happy');
+        break;
+
+      case 'SLEEPING':
+        armController.setGesture('IDLE');
+        animationCoordinator.setExpression('sleepy');
+        voiceManager.speak("Yaaawn... Time for a cozy power nap. Zzz...", 'sleepy');
+        break;
+
+      case 'IDLE':
+      default:
+        armController.setGesture('IDLE');
+        animationCoordinator.setExpression('happy');
+        break;
+    }
   }
 
-  /**
-   * High-Level Pipeline:
-   * Intent / Emotion / Context -> BehaviorManager -> ActionManager -> Subsystems
-   */
-  public handleIntent(
-    intent: string,
-    context: BehaviorDispatchContext,
-    detectedEmotion?: RobotEmotion,
-    textPayload?: string
-  ) {
-    this.currentBehavior = intent;
-    this.notify();
+  public update(dtMs: number) {
+    if (!this.autonomousEnabled) return;
 
-    if (detectedEmotion) {
-      context.setEmotion(detectedEmotion);
-      emotionEngine.setEmotion(detectedEmotion);
-    }
+    this.idleTimeSec += dtMs / 1000;
 
-    const norm = intent.toLowerCase().trim();
-
-    if (norm.includes('cook')) {
-      activityManager.startActivity('COOKING', context);
-    } else if (norm.includes('sing')) {
-      activityManager.startActivity('SINGING', context);
-    } else if (norm.includes('read') || norm.includes('story') || norm.includes('book')) {
-      activityManager.startActivity('READING', context, textPayload);
-    } else if (norm.includes('music') || norm.includes('play song')) {
-      activityManager.startActivity('LISTENING_MUSIC', context);
-    } else if (norm.includes('sleep') || norm.includes('goodnight')) {
-      activityManager.startActivity('SLEEPING', context);
-    } else if (norm.includes('wake') || norm.includes('good morning')) {
-      actionManager.executeAction('WakeAction', {
-        setState: context.setState,
-        setEmotion: context.setEmotion,
-      });
-    } else if (norm.includes('greet') || norm.includes('hello') || norm.includes('hi')) {
-      actionManager.executeAction('GreetingAction', {
-        setState: context.setState,
-        setEmotion: context.setEmotion,
-      });
-    } else if (norm.includes('celebrate') || norm.includes('hooray') || norm.includes('party')) {
-      actionManager.executeAction('CelebrationAction', {
-        setState: context.setState,
-        setEmotion: context.setEmotion,
-      });
-    } else if (norm.includes('wave')) {
-      armController.executeGesture('WAVE', 3000);
-      context.setEmotion('HAPPY');
-      emotionEngine.setEmotion('HAPPY');
-    } else {
-      // General conversation
-      actionManager.executeAction('ConversationAction', {
-        setState: context.setState,
-        setEmotion: context.setEmotion,
-      });
-      if (textPayload) {
-        voiceManager.speak(textPayload);
+    // After 90 seconds of inactivity in IDLE, yawn or stretch
+    if (this.idleTimeSec > 90 && activitySceneManager.getActivity() === 'IDLE') {
+      this.idleTimeSec = 0;
+      const roll = Math.random();
+      if (roll < 0.4) {
+        animationCoordinator.setExpression('bored');
+      } else if (roll < 0.7) {
+        armController.setGesture('THINKING');
+        animationCoordinator.setExpression('curious');
+        setTimeout(() => {
+          armController.setGesture('IDLE');
+          animationCoordinator.setExpression('happy');
+        }, 4000);
       }
     }
-  }
-
-  public triggerGreeting(context?: BehaviorDispatchContext) {
-    this.currentBehavior = 'GREETING';
-    this.notify();
-
-    if (context) {
-      actionManager.executeAction('GreetingAction', {
-        setState: context.setState,
-        setEmotion: context.setEmotion,
-      });
-    } else {
-      // Direct subsystem drive
-      emotionEngine.setEmotion('SURPRISED', 0.9);
-      setTimeout(() => {
-        emotionEngine.setEmotion('HAPPY', 0.85);
-        armController.executeGesture('WAVE', 2500);
-        voiceManager.speak("Hey! You're back. Good to see you!");
-      }, 400);
-    }
-  }
-
-  public resetToIdle(context: BehaviorDispatchContext) {
-    this.currentBehavior = 'IDLE';
-    this.notify();
-    actionManager.stopActiveAction();
-    activityManager.stopActivity(context);
-    armController.resetToSafePosition();
-    context.setState('IDLE');
-    context.setEmotion('NEUTRAL');
-    emotionEngine.setEmotion('NEUTRAL');
   }
 }
 

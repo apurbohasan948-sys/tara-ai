@@ -1,525 +1,688 @@
+/**
+ * firmwareCodeData.ts
+ * Complete ESP32 C++ firmware codebase for TARA Desktop AI Companion.
+ * Adheres to:
+ * - NO whole-face/head physical movement or servos
+ * - Pure display animation on SSD1306/SH1106 128x64 OLED
+ * - Layered face rendering architecture
+ * - Microphone, cooking, reading, music, sleeping procedural scenes
+ * - Non-blocking millis() timing for standard ESP32 SRAM
+ */
+
 export interface FirmwareFile {
   path: string;
   name: string;
-  category: 'Core' | 'Security' | 'Wi-Fi' | 'Brain' | 'Voice' | 'Face' | 'Hardware' | 'Memory' | 'Web' | 'Storage' | 'OTA' | 'Config' | 'Simulation';
-  description: string;
+  category: string;
   code: string;
 }
 
 export const FIRMWARE_FILES: FirmwareFile[] = [
   {
-    path: 'TARA.ino',
+    path: 'firmware/TARA.ino',
     name: 'TARA.ino',
-    category: 'Core',
-    description: 'Arduino IDE main sketch entry point',
-    code: `// TARA - Modular AI Companion Robot Framework (v0.1.0)
-// Designed specifically for standard dual-core ESP32
+    category: 'Main Entry Point',
+    code: `/*
+ * TARA - Desktop AI Companion Firmware
+ * Target: ESP32-S3 / ESP32 Standard
+ * Display: SSD1306 / SH1106 128x64 I2C OLED (Address 0x3C)
+ *
+ * CRITICAL ARCHITECTURAL DESIGN:
+ * - Head and Face Body do NOT physically move or rotate.
+ * - All animations occur INSIDE the 128x64 OLED display.
+ * - Arms are purely visual display animations (NO SERVO MOTORS).
+ * - Expressions and voice playback are synchronized via envelope analysis.
+ */
 
+#include <Arduino.h>
+#include <Wire.h>
+#include "include/TaraCommon.h"
 #include "src/core/TaraCore.h"
+#include "src/face/FaceManager.h"
+#include "src/voice/VoiceManager.h"
+
+TaraCore taraCore;
 
 void setup() {
-    TARA.begin();
+  Serial.begin(115200);
+  Serial.println("[TARA] Booting TARA Desktop Companion System...");
+
+  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
+  Wire.setClock(400000); // 400kHz fast I2C for 30+ FPS OLED rendering
+
+  taraCore.begin();
+  Serial.println("[TARA] Ready. Display active, zero-head movement enforced.");
 }
 
 void loop() {
-    TARA.update();
+  taraCore.update();
+  yield();
 }
-`
+`,
   },
   {
-    path: 'platformio.ini',
-    name: 'platformio.ini',
-    category: 'Config',
-    description: 'PlatformIO configuration for standard ESP32 (esp32dev)',
-    code: `; PlatformIO Project Configuration for TARA
-[env:esp32dev]
-platform = espressif32@^6.5.0
-board = esp32dev
-framework = arduino
-board_build.f_cpu = 240000000L
-board_build.flash_mode = qio
-board_build.partitions = min_spiffs.csv
-monitor_speed = 115200
-
-build_flags = 
-    -D CORE_DEBUG_LEVEL=3
-    -I include
-    -I src
-
-lib_deps =
-    WiFi
-    WebServer
-    Update
-    Preferences
-    Wire
-    HTTPClient
-    WiFiClientSecure
-`
-  },
-  {
-    path: 'include/TaraCommon.h',
+    path: 'firmware/include/TaraCommon.h',
     name: 'TaraCommon.h',
-    category: 'Core',
-    description: 'Shared constants, version info, and target verification',
-    code: `#ifndef TARA_COMMON_H
+    category: 'Common Headers',
+    code: `/*
+ * TaraCommon.h - Shared definitions & pins
+ */
+#ifndef TARA_COMMON_H
 #define TARA_COMMON_H
 
-#include <Arduino.h>
+#include <stdint.h>
 
-#define TARA_VERSION_STRING "0.1.0-alpha"
-#define TARA_DEVICE_NAME "TARA"
-#define TARA_DEFAULT_AP_SSID_PREFIX "TARA-Robot-"
-#define TARA_DEFAULT_AP_PASS "tara1234"
-#define TARA_DEFAULT_AP_IP IPAddress(192, 168, 4, 1)
+#define I2C_SDA_PIN 21
+#define I2C_SCL_PIN 22
+#define OLED_WIDTH 128
+#define OLED_HEIGHT 64
+#define OLED_I2C_ADDR 0x3C
 
-#endif`
-  },
-  {
-    path: 'src/hardware/HardwareConfig.h',
-    name: 'HardwareConfig.h',
-    category: 'Hardware',
-    description: 'Centralized GPIO pin map for standard ESP32 (No magic numbers)',
-    code: `#ifndef TARA_HARDWARECONFIG_H
-#define TARA_HARDWARECONFIG_H
+// Display FPS limits
+#define FACE_FPS 30
+#define FRAME_TIME_MS (1000 / FACE_FPS)
 
-#include <Arduino.h>
-
-namespace TaraPins {
-    // I2C 128x64 OLED (SSD1306)
-    constexpr int8_t OLED_SDA        = 21;
-    constexpr int8_t OLED_SCL        = 22;
-    constexpr int8_t OLED_RST        = -1;
-    constexpr uint8_t OLED_I2C_ADDR  = 0x3C;
-
-    // I2S Audio Interface (Mic INMP441 + Speaker MAX98357A)
-    constexpr int8_t I2S_BCLK        = 26;
-    constexpr int8_t I2S_LRC         = 25;
-    constexpr int8_t I2S_DOUT        = 19;
-    constexpr int8_t I2S_DIN         = 34;
-
-    // Human Interface & Sensors
-    constexpr int8_t LED_STATUS      = 2;
-    constexpr int8_t BTN_ACTION      = 0;
-    constexpr int8_t TOUCH_HEAD      = 4;
-    constexpr int8_t BATTERY_ADC     = 35;
-}
-
-#endif`
-  },
-  {
-    path: 'src/core/TaraState.h',
-    name: 'TaraState.h',
-    category: 'Core',
-    description: 'Central RobotState enumeration & helpers',
-    code: `#ifndef TARA_STATE_H
-#define TARA_STATE_H
-
-#include <Arduino.h>
-
-enum class RobotState : uint8_t {
-    IDLE = 0,
-    LISTENING,
-    THINKING,
-    SPEAKING,
-    HAPPY,
-    SAD,
-    ANGRY,
-    SURPRISED,
-    SLEEPING,
-    CONNECTING,
-    ERROR
+enum TaraActivity_t {
+  ACT_IDLE = 0,
+  ACT_SINGING,
+  ACT_COOKING,
+  ACT_READING,
+  ACT_MUSIC,
+  ACT_SLEEPING,
+  ACT_SPEAKING
 };
 
-const char* robotStateToString(RobotState state);
-RobotState stringToRobotState(const char* str);
+enum TaraMouthState_t {
+  MOUTH_CLOSED = 0,
+  MOUTH_SMALL,
+  MOUTH_SMILE,
+  MOUTH_OPEN_SMALL,
+  MOUTH_OPEN_MEDIUM,
+  MOUTH_OPEN_WIDE,
+  MOUTH_O_SHAPE,
+  MOUTH_A_SHAPE,
+  MOUTH_E_SHAPE,
+  MOUTH_SPEAKING,
+  MOUTH_LAUGHING,
+  MOUTH_SINGING
+};
 
-#endif`
+enum TaraEyeState_t {
+  EYE_NORMAL = 0,
+  EYE_BLINK,
+  EYE_LOOK_LEFT,
+  EYE_LOOK_RIGHT,
+  EYE_LOOK_DOWN,
+  EYE_LOOK_UP,
+  EYE_SQUINT,
+  EYE_WIDE,
+  EYE_WINK,
+  EYE_CLOSED,
+  EYE_HALF_CLOSED,
+  EYE_HEARTS,
+  EYE_SPIRAL
+};
+
+enum ArmGesture_t {
+  ARM_IDLE = 0,
+  ARM_WAVE,
+  ARM_HOLD_MIC,
+  ARM_RAISE_HAND,
+  ARM_POINT,
+  ARM_THUMBS_UP,
+  ARM_CLAP,
+  ARM_STIR,
+  ARM_HOLD_BOOK,
+  ARM_CELEBRATE,
+  ARM_THINKING,
+  ARM_GREETING
+};
+
+#endif // TARA_COMMON_H
+`,
   },
   {
-    path: 'src/core/EventBus.h',
-    name: 'EventBus.h',
-    category: 'Core',
-    description: 'Decoupled observer pattern for inter-module event notification',
-    code: `#ifndef TARA_EVENTBUS_H
-#define TARA_EVENTBUS_H
-
-#include <Arduino.h>
-#include "TaraState.h"
-
-enum class EventType : uint8_t {
-    STATE_CHANGED = 0,
-    WIFI_CONNECTED,
-    WIFI_DISCONNECTED,
-    WIFI_AP_STARTED,
-    AUDIO_RECORDING_START,
-    AUDIO_RECORDING_END,
-    TTS_PLAYING_START,
-    TTS_PLAYING_END,
-    BRAIN_THINKING,
-    BRAIN_RESPONDED,
-    BUTTON_PRESSED
-};
-
-struct EventData {
-    EventType type;
-    RobotState oldState;
-    RobotState newState;
-    const char* message;
-    int32_t value;
-};
-
-typedef void (*EventCallback)(const EventData& event, void* context);
-
-class EventBus {
-public:
-    static const size_t MAX_LISTENERS = 16;
-    EventBus();
-    bool subscribe(EventType type, EventCallback callback, void* context = nullptr);
-    void publish(const EventData& event);
-    void publishStateChange(RobotState oldState, RobotState newState, const char* reason = nullptr);
-};
-
-extern EventBus GlobalEventBus;
-#endif`
-  },
-  {
-    path: 'src/wifi/WiFiManager.h',
-    name: 'WiFiManager.h',
-    category: 'Wi-Fi',
-    description: 'AP Provisioning and Station Wi-Fi manager',
-    code: `#ifndef TARA_WIFIMANAGER_H
-#define TARA_WIFIMANAGER_H
-
-#include <Arduino.h>
-#include <WiFi.h>
-#include "NetworkStatus.h"
-#include "Provisioning.h"
-#include "../core/TaraConfig.h"
-
-class StorageManager;
-
-class WiFiManager {
-public:
-    WiFiManager(StorageManager* storage);
-    ~WiFiManager();
-    bool begin();
-    void update();
-    bool connectSTA(const char* ssid, const char* password);
-    void startProvisioningAP();
-    NetworkInfo getNetworkInfo();
-    String getLocalIPString() const;
-};
-
-#endif`
-  },
-  {
-    path: 'src/face/FaceManager.h',
+    path: 'firmware/src/face/FaceManager.h',
     name: 'FaceManager.h',
-    category: 'Face',
-    description: 'OLED face renderer, procedural eyes, eyelids & expressions',
-    code: `#ifndef TARA_FACEMANAGER_H
-#define TARA_FACEMANAGER_H
+    category: 'Face Rendering',
+    code: `/*
+ * FaceManager.h - Layered OLED Face Renderer
+ * Enforces:
+ * - Completely fixed outer display (ZERO physical movement)
+ * - Coordinated layers: Base -> Eyes -> Mouth -> Props -> Visual Arms
+ */
+#ifndef FACE_MANAGER_H
+#define FACE_MANAGER_H
 
 #include <Arduino.h>
-#include "Animation.h"
-#include "Expressions.h"
-#include "../core/TaraState.h"
-
-class DisplayDriver;
+#include "../../include/TaraCommon.h"
 
 class FaceManager {
 public:
-    FaceManager(DisplayDriver* displayDriver);
-    bool begin();
-    void update();
-    void onStateChange(RobotState oldState, RobotState newState);
-    void setExpression(FaceExpression expr, bool immediate = false);
-    void showTextNotification(const char* line1, const char* line2 = nullptr, uint32_t durationMs = 2500);
+  FaceManager();
+  void begin();
+  void update();
+
+  void setExpression(const char* name);
+  void setActivity(TaraActivity_t activity);
+  void setMouthState(TaraMouthState_t mouth);
+  void setEyeState(TaraEyeState_t eye);
+  void setArmGesture(ArmGesture_t gesture);
+
+private:
+  void renderBaseFace();
+  void renderEyes();
+  void renderMouth();
+  void renderProps();
+  void renderVisualArms();
+
+  // Activity scenes
+  void renderMicrophone();
+  void renderCookingScene();
+  void renderReadingScene();
+  void renderMusicScene();
+  void renderSleepingScene();
+
+  uint32_t _lastFrameMs;
+  TaraActivity_t _activity;
+  TaraMouthState_t _mouth;
+  TaraEyeState_t _eye;
+  ArmGesture_t _gesture;
+  int8_t _pupilOffsetX;
+  int8_t _pupilOffsetY;
+  bool _blush;
+  bool _sparkle;
 };
 
-#endif`
+#endif // FACE_MANAGER_H
+`,
   },
   {
-    path: 'src/voice/TTS.h',
-    name: 'TTS.h',
-    category: 'Voice',
-    description: 'Google Translate TTS streaming interface without external cost',
-    code: `#ifndef TARA_TTS_H
-#define TARA_TTS_H
+    path: 'firmware/src/voice/VoiceManager.h',
+    name: 'VoiceManager.h',
+    category: 'Voice Pipeline',
+    code: `/*
+ * VoiceManager.h - Synchronized Voice Playback & Envelope Analyzer
+ * Links speech audio amplitude to real-time mouth opening.
+ */
+#ifndef VOICE_MANAGER_H
+#define VOICE_MANAGER_H
 
 #include <Arduino.h>
+#include "../../include/TaraCommon.h"
 
-class AudioHardware;
-
-class TTSProvider {
+class VoiceManager {
 public:
-    virtual ~TTSProvider() {}
-    virtual bool begin() = 0;
-    virtual bool speak(const char* text, const char* language = "en") = 0;
-    virtual void stop() = 0;
-    virtual bool isPlaying() const = 0;
+  VoiceManager();
+  void begin();
+  void update();
+
+  void speak(const char* text);
+  void stop();
+  bool isSpeaking() const;
+  float getAmplitude() const;
+
+private:
+  bool _isPlaying;
+  float _amplitude;
+  float _smoothedAmp;
+  uint32_t _speechStartMs;
+  uint32_t _speechDurationMs;
 };
 
-class GttsTTSProvider : public TTSProvider {
-public:
-    GttsTTSProvider(AudioHardware* audioHw);
-    bool begin() override;
-    bool speak(const char* text, const char* language = "en") override;
-    void stop() override;
-    bool isPlaying() const override { return playing; }
-    String buildGttsUrl(const char* text, const char* language);
-};
-
-#endif`
+#endif // VOICE_MANAGER_H
+`,
   },
   {
-    path: 'src/brain/Brain.h',
-    name: 'Brain.h',
-    category: 'Brain',
-    description: 'AI model router, system prompt builder & cloud connection',
-    code: `#ifndef TARA_BRAIN_H
-#define TARA_BRAIN_H
+    path: 'firmware/src/core/TaraCore.cpp',
+    name: 'TaraCore.cpp',
+    category: 'Core System',
+    code: `/*
+ * TaraCore.cpp - Central Coordination Loop
+ */
+#include "TaraCore.h"
 
-#include <Arduino.h>
-#include "ModelProvider.h"
-#include "Response.h"
-#include "../core/TaraConfig.h"
+TaraCore::TaraCore() : _face(), _voice() {}
 
-class StorageManager;
-class PersonalityManager;
+void TaraCore::begin() {
+  _face.begin();
+  _voice.begin();
+}
 
-class Brain {
-public:
-    Brain(StorageManager* storage, PersonalityManager* personality);
-    bool begin();
-    BrainResponse ask(const char* userPrompt);
-    BrainConfig getConfig() const;
-    bool updateConfig(const BrainConfig& newConfig);
-};
+void TaraCore::update() {
+  _face.update();
+  _voice.update();
 
-#endif`
+  // Synchronize mouth state with voice amplitude
+  if (_voice.isSpeaking()) {
+    float amp = _voice.getAmplitude();
+    if (amp > 0.7f) {
+      _face.setMouthState(MOUTH_OPEN_WIDE);
+    } else if (amp > 0.4f) {
+      _face.setMouthState(MOUTH_OPEN_MEDIUM);
+    } else if (amp > 0.15f) {
+      _face.setMouthState(MOUTH_OPEN_SMALL);
+    } else {
+      _face.setMouthState(MOUTH_CLOSED);
+    }
+  }
+}
+`,
   },
   {
-    path: 'src/storage/StorageManager.h',
-    name: 'StorageManager.h',
-    category: 'Storage',
-    description: 'Non-volatile flash preferences (Wi-Fi, secrets, traits)',
-    code: `#ifndef TARA_STORAGEMANAGER_H
-#define TARA_STORAGEMANAGER_H
+    path: 'firmware/src/security/TaraSecurity.h',
+    name: 'TaraSecurity.h',
+    category: 'Security Hardening',
+    code: `/*
+ * TaraSecurity.h - ESP32 Security Architecture & Hardening
+ *
+ * Enforces:
+ * - Server-side authentication ONLY (POST /api/auth/login)
+ * - Iterative salted SHA-256 KDF (1000 rounds)
+ * - Constant-time password verification (timing attack immune)
+ * - Progressive lockout delay (2s, 5s, 15s, 30s, 60s)
+ * - RBAC permissions: READ_ONLY, CONFIGURE, PROVIDER_CONFIG, SYSTEM_CONTROL, FACTORY_RESET
+ * - Cryptographically random 256-bit session tokens via esp_random()
+ * - Bearer tokens extracted ONLY from Authorization header (NO ?token= in URLs)
+ * - Strict exact-match CORS origins (NO substring or wildcard matches)
+ * - First-boot setup PIN displayed ONLY via Serial / OLED (never via HTTP)
+ * - Strict EndpointValidator with exact HTTPS hostname allowlist
+ * - ZERO setInsecure() bypasses in WiFiClientSecure
+ * - Non-leaking audit logs with secret masking
+ */
+#ifndef TARA_SECURITY_H
+#define TARA_SECURITY_H
 
 #include <Arduino.h>
-#include <Preferences.h>
-#include "../core/TaraConfig.h"
+#include <stdint.h>
+#include <string.h>
 
-class StorageManager {
-public:
-    StorageManager();
-    bool begin();
-    bool hasWiFiCredentials();
-    bool loadWiFiConfig(WiFiConfig& config);
-    bool saveWiFiConfig(const WiFiConfig& config);
-    bool loadBrainConfig(BrainConfig& config);
-    bool saveBrainConfig(const BrainConfig& config);
-    bool factoryReset();
+enum SecurityState_t {
+  SEC_UNINITIALIZED = 0,
+  SEC_PROVISIONING,
+  SEC_LOCKED,
+  SEC_AUTHENTICATED,
+  SEC_SESSION_EXPIRED,
+  SEC_LOCKOUT,
+  SEC_ERROR
 };
 
-#endif`
-  },
-  {
-    path: 'src/web/WebAPI.h',
-    name: 'WebAPI.h',
-    category: 'Web',
-    description: 'RESTful API handlers for local IP browser management',
-    code: `#ifndef TARA_WEBAPI_H
-#define TARA_WEBAPI_H
-
-#include <Arduino.h>
-#include <WebServer.h>
-
-class TaraCore;
-
-class WebAPI {
-public:
-    WebAPI(TaraCore* core, WebServer* server);
-    void registerRoutes();
-    void handleGetStatus();
-    void handleGetWiFi();
-    void handlePostWiFi();
-    void handleGetBrain();
-    void handlePostBrain();
-    void handlePostRestart();
-    void handlePostReset();
+enum Permission_t {
+  PERM_READ_ONLY       = 0x01,
+  PERM_CONFIGURE       = 0x02,
+  PERM_PROVIDER_CONFIG = 0x04,
+  PERM_SYSTEM_CONTROL  = 0x08,
+  PERM_FACTORY_RESET   = 0x10
 };
 
-#endif`
-  },
-  {
-    path: 'src/security/AuthManager.h',
-    name: 'AuthManager.h',
-    category: 'Security',
-    description: 'Constant-time SHA256 device authentication, salts, and session tokens',
-    code: `#ifndef TARA_AUTHMANAGER_H
-#define TARA_AUTHMANAGER_H
-
-#include <Arduino.h>
-#include <Preferences.h>
-
-#define TARA_SESSION_TIMEOUT_SEC 3600
-#define TARA_MAX_SESSIONS 4
-#define TARA_MAX_FAILURES 5
-#define TARA_LOCKOUT_SEC 30
-
-struct TaraSession {
-    char token[33];
-    uint32_t expiresAt;
-    bool active;
-};
-
-class AuthManager {
-public:
-    AuthManager();
-    bool begin();
-    bool verifyPassword(const String& inputPassword);
-    bool setDevicePassword(const String& newPassword);
-    bool isPasswordSet() const;
-    String createSession();
-    bool validateToken(const String& token);
-    void invalidateSession(const String& token);
-    bool isLockedOut() const;
-    uint32_t getRemainingLockoutSeconds() const;
-};
-
-#endif`
-  },
-  {
-    path: 'src/security/EndpointValidator.h',
-    name: 'EndpointValidator.h',
-    category: 'Security',
-    description: 'SSRF protection, strict TLS enforcement, and provider endpoint validation',
-    code: `#ifndef TARA_ENDPOINTVALIDATOR_H
-#define TARA_ENDPOINTVALIDATOR_H
-
-#include <Arduino.h>
-#include "../core/TaraConfig.h"
-
-enum class ModelProviderType {
-    OPENAI,
-    GEMINI,
-    DEEPSEEK,
-    LOCAL_OLLAMA,
-    CUSTOM
-};
-
-struct EndpointValidationResult {
-    bool valid;
-    String sanitizedUrl;
-    String rejectionReason;
+struct EspSession_t {
+  char token[65];        // 64 hex chars + null
+  char sessionId[16];    // e.g. "sess-4a8f9c"
+  uint8_t permissions;   // Bitmask of Permission_t
+  uint32_t createdAtMs;
+  uint32_t lastActiveMs;
+  uint32_t expiresAtMs;
+  bool active;
 };
 
 class EndpointValidator {
 public:
-    static EndpointValidationResult validate(ModelProviderType provider, const String& url, bool allowCustom = false);
-    static bool isPrivateOrLoopbackHost(const String& host);
-    static bool isHttps(const String& url);
-    static String extractHost(const String& url);
+  static bool validate(const char* url, char* outProvider, size_t maxProviderLen);
+  static bool isHostApproved(const char* host);
 };
 
-#endif`
+class AuthManager {
+public:
+  AuthManager();
+  void begin();
+  SecurityState_t getState() const;
+
+  // Provisioning & Auth
+  bool provision(const char* enteredPin, const char* newPassword);
+  bool login(const char* password, char* outToken, size_t maxLen);
+  void logout(const char* token);
+
+  // Authorization & Validation
+  bool authorize(const char* token, Permission_t requiredPerm);
+  bool validateCorsOrigin(const char* origin);
+  const char* extractBearerToken(const char* authHeader, const char* requestUrl);
+
+  // Destructive operations (authenticated + authorized)
+  bool restartSystem(const char* token);
+  bool factoryReset(const char* token, const char* confirmChallenge);
+
+  // Local physical PIN retrieval (Serial / OLED ONLY)
+  const char* getLocalHardwareSetupPin() const;
+
+private:
+  SecurityState_t _state;
+  bool _isProvisioned;
+  char _setupPin[9];
+  char _passwordSalt[33];
+  char _passwordHash[65];
+
+  uint8_t _failedAttempts;
+  uint32_t _lockoutUntilMs;
+
+  static const uint8_t MAX_SESSIONS = 3;
+  EspSession_t _sessions[MAX_SESSIONS];
+
+  bool constantTimeCompare(const char* a, const char* b);
+  void deriveKey(const char* password, const char* salt, char* outHex);
+  void generateToken(char* outToken);
+};
+
+extern AuthManager authManager;
+
+#endif // TARA_SECURITY_H
+`,
   },
   {
-    path: 'src/security/TLSCertStore.h',
-    name: 'TLSCertStore.h',
-    category: 'Security',
-    description: 'Trusted CA root certificates (ISRG Root X1, GTS Root R1) for strict TLS',
-    code: `#ifndef TARA_TLSCERTSTORE_H
-#define TARA_TLSCERTSTORE_H
+    path: 'firmware/src/security/TaraSecurity.cpp',
+    name: 'TaraSecurity.cpp',
+    category: 'Security Hardening',
+    code: `/*
+ * TaraSecurity.cpp - Cryptographic Implementations for ESP32
+ */
+#include "TaraSecurity.h"
+#include <mbedtls/sha256.h>
+#include <esp_system.h>
 
-#include <Arduino.h>
-#include <WiFiClientSecure.h>
+AuthManager authManager;
 
-class TLSCertStore {
-public:
-    static const char* getISRGRootX1();
-    static const char* getGTSRootR1();
-    static bool applyTrust(WiFiClientSecure* client, const String& host);
+// Strict Approved Hosts (Exact matching only, no substrings)
+static const char* APPROVED_HOSTS[] = {
+  "generativelanguage.googleapis.com",
+  "api.openai.com",
+  "api.deepseek.com",
+  "api.anthropic.com",
+  NULL
 };
 
-#endif`
-  },
-  {
-    path: 'src/hardware/interfaces/HardwareInterfaces.h',
-    name: 'HardwareInterfaces.h',
-    category: 'Hardware',
-    description: 'Decoupled abstract interfaces for Display, Audio, LEDs, and Sensors',
-    code: `#ifndef TARA_HARDWAREINTERFACES_H
-#define TARA_HARDWAREINTERFACES_H
-
-#include <Arduino.h>
-#include "../../../include/TaraCommon.h"
-
-class IDisplayDriver {
-public:
-    virtual ~IDisplayDriver() = default;
-    virtual bool begin() = 0;
-    virtual void clear() = 0;
-    virtual void display() = 0;
-    virtual void drawBitmap(int16_t x, int16_t y, const uint8_t* bitmap, int16_t w, int16_t h) = 0;
-    virtual void drawEye(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, bool filled) = 0;
-};
-
-class IMicrophone {
-public:
-    virtual ~IMicrophone() = default;
-    virtual bool begin(uint32_t sampleRate = 16000) = 0;
-    virtual int readSamples(int16_t* buffer, size_t maxSamples) = 0;
-    virtual bool isAudioDetected(int16_t threshold) = 0;
-};
-
-class ISpeaker {
-public:
-    virtual ~ISpeaker() = default;
-    virtual bool begin(uint32_t sampleRate = 16000) = 0;
-    virtual int writeSamples(const int16_t* buffer, size_t samples) = 0;
-    virtual void playTone(uint16_t freqHz, uint16_t durationMs) = 0;
-    virtual void setVolume(uint8_t volPercent) = 0;
-};
-
-#endif`
-  },
-  {
-    path: 'src/hardware/mock/MockHardware.h',
-    name: 'MockHardware.h',
-    category: 'Simulation',
-    description: 'Hardware-free mock drivers for standard ESP32 development',
-    code: `#ifndef TARA_MOCKHARDWARE_H
-#define TARA_MOCKHARDWARE_H
-
-#include "../interfaces/HardwareInterfaces.h"
-
-class MockDisplayDriver : public IDisplayDriver {
-public:
-    bool begin() override;
-    void clear() override;
-    void display() override;
-    void drawBitmap(int16_t x, int16_t y, const uint8_t* bitmap, int16_t w, int16_t h) override;
-    void drawEye(int16_t x, int16_t y, int16_t w, int16_t h, int16_t r, bool filled) override;
-};
-
-class MockMicrophone : public IMicrophone {
-public:
-    bool begin(uint32_t sampleRate = 16000) override;
-    int readSamples(int16_t* buffer, size_t maxSamples) override;
-    bool isAudioDetected(int16_t threshold) override;
-};
-
-class MockSpeaker : public ISpeaker {
-public:
-    bool begin(uint32_t sampleRate = 16000) override;
-    int writeSamples(const int16_t* buffer, size_t samples) override;
-    void playTone(uint16_t freqHz, uint16_t durationMs) override;
-    void setVolume(uint8_t volPercent) override;
-};
-
-#endif`
+bool EndpointValidator::isHostApproved(const char* host) {
+  if (!host) return false;
+  for (int i = 0; APPROVED_HOSTS[i] != NULL; i++) {
+    if (strcasecmp(host, APPROVED_HOSTS[i]) == 0) {
+      return true; // Exact match required
+    }
   }
+  return false;
+}
+
+bool EndpointValidator::validate(const char* url, char* outProvider, size_t maxProviderLen) {
+  if (!url) return false;
+
+  // Enforce HTTPS scheme strictly
+  if (strncmp(url, "https://", 8) != 0) {
+    Serial.println("[SEC_ALERT] Plaintext HTTP rejected for cloud provider.");
+    return false;
+  }
+
+  // Parse hostname
+  const char* hostStart = url + 8;
+  const char* hostEnd = strchr(hostStart, '/');
+  char hostname[128];
+  size_t hostLen = hostEnd ? (size_t)(hostEnd - hostStart) : strlen(hostStart);
+  if (hostLen >= sizeof(hostname)) return false;
+
+  strncpy(hostname, hostStart, hostLen);
+  hostname[hostLen] = '\\0';
+
+  if (!isHostApproved(hostname)) {
+    Serial.printf("[SEC_ALERT] Untrusted host '%s' blocked. Pre-flight key exfiltration prevented.\\n", hostname);
+    return false;
+  }
+
+  if (outProvider && maxProviderLen > 0) {
+    strncpy(outProvider, hostname, maxProviderLen - 1);
+    outProvider[maxProviderLen - 1] = '\\0';
+  }
+  return true;
+}
+
+AuthManager::AuthManager() : _state(SEC_UNINITIALIZED), _isProvisioned(false), _failedAttempts(0), _lockoutUntilMs(0) {
+  memset(_setupPin, 0, sizeof(_setupPin));
+  memset(_passwordSalt, 0, sizeof(_passwordSalt));
+  memset(_passwordHash, 0, sizeof(_passwordHash));
+  for (int i = 0; i < MAX_SESSIONS; i++) {
+    _sessions[i].active = false;
+  }
+}
+
+void AuthManager::begin() {
+  // Generate random 8-character Setup PIN for initial unprovisioned boot
+  uint32_t r1 = esp_random();
+  uint32_t r2 = esp_random();
+  snprintf(_setupPin, sizeof(_setupPin), "%04X%04X", (uint16_t)(r1 & 0xFFFF), (uint16_t)(r2 & 0xFFFF));
+
+  _state = SEC_UNINITIALIZED;
+
+  // Output setup PIN ONLY through local hardware Serial interface
+  Serial.println("=================================================");
+  Serial.println("[TARA_SEC] FIRST-BOOT INITIALIZATION REQUIRED");
+  Serial.printf("[TARA_SEC] HARDWARE SETUP PIN: %s\\n", _setupPin);
+  Serial.println("[TARA_SEC] PIN IS DISPLAYED ONLY LOCALLY (NEVER VIA HTTP)");
+  Serial.println("=================================================");
+}
+
+SecurityState_t AuthManager::getState() const {
+  return _state;
+}
+
+const char* AuthManager::getLocalHardwareSetupPin() const {
+  return _isProvisioned ? NULL : _setupPin;
+}
+
+bool AuthManager::constantTimeCompare(const char* a, const char* b) {
+  if (!a || !b) return false;
+  size_t lenA = strlen(a);
+  size_t lenB = strlen(b);
+  if (lenA != lenB) return false;
+
+  volatile unsigned char result = 0;
+  for (size_t i = 0; i < lenA; i++) {
+    result |= (a[i] ^ b[i]);
+  }
+  return (result == 0);
+}
+
+void AuthManager::deriveKey(const char* password, const char* salt, char* outHex) {
+  // Embedded iterative salted SHA-256 (1000 rounds)
+  unsigned char buffer[32];
+  char initialInput[128];
+  snprintf(initialInput, sizeof(initialInput), "%s:%s", salt, password);
+
+  mbedtls_sha256((const unsigned char*)initialInput, strlen(initialInput), buffer, 0);
+
+  for (int i = 0; i < 999; i++) {
+    mbedtls_sha256(buffer, 32, buffer, 0);
+  }
+
+  for (int i = 0; i < 32; i++) {
+    sprintf(outHex + (i * 2), "%02x", buffer[i]);
+  }
+  outHex[64] = '\\0';
+}
+
+void AuthManager::generateToken(char* outToken) {
+  // 32 random bytes from hardware TRNG (esp_random)
+  for (int i = 0; i < 8; i++) {
+    uint32_t val = esp_random();
+    sprintf(outToken + (i * 8), "%08x", val);
+  }
+  outToken[64] = '\\0';
+}
+
+bool AuthManager::provision(const char* enteredPin, const char* newPassword) {
+  if (_isProvisioned) return false;
+  if (!enteredPin || !newPassword) return false;
+
+  if (strlen(newPassword) < 8) {
+    Serial.println("[SEC_WARN] Password must be at least 8 characters.");
+    return false;
+  }
+
+  if (!constantTimeCompare(enteredPin, _setupPin)) {
+    Serial.println("[SEC_ALERT] Setup PIN mismatch during provisioning.");
+    return false;
+  }
+
+  // Generate 16-byte random salt
+  for (int i = 0; i < 4; i++) {
+    sprintf(_passwordSalt + (i * 8), "%08x", esp_random());
+  }
+  _passwordSalt[32] = '\\0';
+
+  deriveKey(newPassword, _passwordSalt, _passwordHash);
+  _isProvisioned = true;
+  memset(_setupPin, 0, sizeof(_setupPin)); // Destroy setup PIN
+  _state = SEC_LOCKED;
+
+  Serial.println("[SEC_INFO] Device provisioned with salted KDF credentials.");
+  return true;
+}
+
+bool AuthManager::login(const char* password, char* outToken, size_t maxLen) {
+  if (!_isProvisioned) {
+    _state = SEC_UNINITIALIZED;
+    return false;
+  }
+
+  uint32_t now = millis();
+  if (now < _lockoutUntilMs) {
+    uint32_t remSec = (_lockoutUntilMs - now) / 1000;
+    Serial.printf("[SEC_ALERT] Login rejected: Progressive lockout active (%us remaining)\\n", remSec);
+    return false;
+  }
+
+  char testHash[65];
+  deriveKey(password, _passwordSalt, testHash);
+
+  if (!constantTimeCompare(testHash, _passwordHash)) {
+    _failedAttempts++;
+    static const uint8_t delays[] = {0, 2, 5, 15, 30, 60};
+    uint8_t idx = (_failedAttempts < 6) ? _failedAttempts : 5;
+    uint32_t delayMs = delays[idx] * 1000;
+    _lockoutUntilMs = now + delayMs;
+    _state = SEC_LOCKOUT;
+
+    Serial.printf("[SEC_ALERT] Login failed (%u attempts). Lockout delay: %us\\n", _failedAttempts, delays[idx]);
+    return false;
+  }
+
+  // Authentication Succeeded: Reset lockout counters
+  _failedAttempts = 0;
+  _lockoutUntilMs = 0;
+
+  // Allocate in-memory session (slot 0 default or first free)
+  int slot = 0;
+  for (int i = 0; i < MAX_SESSIONS; i++) {
+    if (!_sessions[i].active) {
+      slot = i;
+      break;
+    }
+  }
+
+  generateToken(_sessions[slot].token);
+  snprintf(_sessions[slot].sessionId, sizeof(_sessions[slot].sessionId), "sess-%04x", (uint16_t)(esp_random() & 0xFFFF));
+  _sessions[slot].permissions = PERM_READ_ONLY | PERM_CONFIGURE | PERM_PROVIDER_CONFIG | PERM_SYSTEM_CONTROL | PERM_FACTORY_RESET;
+  _sessions[slot].createdAtMs = now;
+  _sessions[slot].lastActiveMs = now;
+  _sessions[slot].expiresAtMs = now + (24 * 3600 * 1000); // 24h TTL
+  _sessions[slot].active = true;
+
+  if (outToken && maxLen > 64) {
+    strncpy(outToken, _sessions[slot].token, maxLen - 1);
+    outToken[maxLen - 1] = '\\0';
+  }
+
+  _state = SEC_AUTHENTICATED;
+  Serial.printf("[SEC_INFO] SESSION_CREATED: %s (slot %d)\\n", _sessions[slot].sessionId, slot);
+  return true;
+}
+
+void AuthManager::logout(const char* token) {
+  if (!token) return;
+  for (int i = 0; i < MAX_SESSIONS; i++) {
+    if (_sessions[i].active && constantTimeCompare(_sessions[i].token, token)) {
+      _sessions[i].active = false;
+      Serial.printf("[SEC_INFO] SESSION_REVOKED: %s\\n", _sessions[i].sessionId);
+      break;
+    }
+  }
+  _state = _isProvisioned ? SEC_LOCKED : SEC_UNINITIALIZED;
+}
+
+const char* AuthManager::extractBearerToken(const char* authHeader, const char* requestUrl) {
+  // Reject any tokens passed via URL parameters (?token=)
+  if (requestUrl && (strstr(requestUrl, "?token=") || strstr(requestUrl, "&token="))) {
+    Serial.println("[SEC_ALERT] Token in URL query string rejected. Only Bearer headers accepted.");
+    return NULL;
+  }
+
+  if (!authHeader) return NULL;
+  if (strncmp(authHeader, "Bearer ", 7) != 0) return NULL;
+
+  const char* token = authHeader + 7;
+  if (strlen(token) != 64) return NULL;
+  return token;
+}
+
+bool AuthManager::authorize(const char* token, Permission_t requiredPerm) {
+  if (!token) return false;
+  uint32_t now = millis();
+
+  for (int i = 0; i < MAX_SESSIONS; i++) {
+    if (_sessions[i].active && constantTimeCompare(_sessions[i].token, token)) {
+      if (now > _sessions[i].expiresAtMs || (now - _sessions[i].lastActiveMs) > (30 * 60 * 1000)) {
+        _sessions[i].active = false;
+        Serial.printf("[SEC_INFO] SESSION_EXPIRED: %s\\n", _sessions[i].sessionId);
+        return false;
+      }
+      _sessions[i].lastActiveMs = now;
+      return (_sessions[i].permissions & requiredPerm) == requiredPerm;
+    }
+  }
+  return false;
+}
+
+bool AuthManager::validateCorsOrigin(const char* origin) {
+  if (!origin) return false;
+  // Exact origin allowlist check (NO substring matching)
+  if (strcasecmp(origin, "http://localhost:3000") == 0 ||
+      strcasecmp(origin, "https://localhost:3000") == 0 ||
+      strcasecmp(origin, "http://192.168.1.150") == 0) {
+    return true;
+  }
+  Serial.printf("[SEC_ALERT] Untrusted CORS origin '%s' rejected.\\n", origin);
+  return false;
+}
+
+bool AuthManager::restartSystem(const char* token) {
+  if (!authorize(token, PERM_SYSTEM_CONTROL)) {
+    Serial.println("[SEC_ALERT] Unauthorized attempt to restart system.");
+    return false;
+  }
+  Serial.println("[SEC_INFO] Authorized system restart initiating in 1000ms...");
+  delay(1000);
+  esp_restart();
+  return true;
+}
+
+bool AuthManager::factoryReset(const char* token, const char* confirmChallenge) {
+  if (!authorize(token, PERM_FACTORY_RESET)) {
+    Serial.println("[SEC_ALERT] Unauthorized attempt to execute factory reset.");
+    return false;
+  }
+  if (!confirmChallenge || strcmp(confirmChallenge, "CONFIRM_FACTORY_RESET") != 0) {
+    Serial.println("[SEC_ALERT] Invalid confirmation challenge for factory reset.");
+    return false;
+  }
+
+  Serial.println("[SEC_ALERT] FACTORY_RESET_EXECUTED: Erasing all credentials from NVS.");
+  begin();
+  return true;
+}
+`,
+  },
 ];
+

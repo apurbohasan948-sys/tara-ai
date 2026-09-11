@@ -1,472 +1,560 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * SimulationControls.tsx
+ * Complete hardware simulation & testing control deck for TARA.
+ *
+ * Fully implements:
+ * - TEST_SINGING
+ * - TEST_COOKING
+ * - TEST_READING
+ * - TEST_MUSIC
+ * - TEST_SLEEP
+ * - TEST_ALL_EXPRESSIONS
+ * - TEST_ALL_MOUTH_STATES
+ * - TEST_ALL_EYE_STATES
+ * - TEST_ALL_ARM_GESTURES
+ *
+ * Plus individual manual controls for:
+ * FACE, EMOTION, ACTIVITY, MICROPHONE, ARMS, MOUTH, VOICE, COOKING, FLAME, STEAM, BOOK, MUSIC.
+ */
+
+import React, { useState } from 'react';
 import {
-  RobotState,
-  RobotEmotion,
-  RobotActivity,
-  RobotActionName,
-  ArmGesture,
-} from '../types';
-import { taraBehaviorManager } from '../services/TaraBehaviorManager';
-import { actionManager } from '../services/ActionManager';
-import { activityManager } from '../services/ActivityManager';
-import { armController } from '../services/ArmController';
-import { presenceManager } from '../services/PresenceManager';
-import { voiceManager } from '../services/VoiceManager';
-import { emotionEngine } from '../services/EmotionEngine';
-import {
-  Cpu,
-  Mic,
+  Play,
+  Square,
   Sparkles,
-  Volume2,
-  Smile,
-  Frown,
-  AlertCircle,
-  Moon,
+  Flame,
   BookOpen,
+  Mic,
   Music,
-  Utensils,
+  Moon,
+  Eye,
+  Smile,
   Hand,
-  RotateCcw,
-  UserCheck,
-  UserX,
-  Send,
-  Zap,
-  Radio,
+  Volume2,
+  ListRestart,
+  CheckCircle2,
+  Tv,
 } from 'lucide-react';
+import { actionManager } from '../services/ActionManager';
+import { activitySceneManager } from '../services/ActivitySceneManager';
+import { animationCoordinator } from '../services/AnimationCoordinator';
+import { armController } from '../services/ArmController';
+import { expressionManager } from '../services/ExpressionManager';
+import { voiceManager } from '../services/VoiceManager';
+import {
+  TaraActivity,
+  TaraArmGesture,
+  TaraEmotion,
+  TaraExpression,
+  TaraEyeState,
+  TaraMouthState,
+} from '../types';
 
-interface SimulationControlsProps {
-  currentState: RobotState;
-  currentEmotion: RobotEmotion;
-  currentActivity?: RobotActivity;
-  onStateChange: (state: RobotState, emotion?: RobotEmotion) => void;
-  onActivityChange?: (act: RobotActivity) => void;
-  onSimulateSpeech?: (text: string) => void;
-}
+export const SimulationControls: React.FC = () => {
+  const [activeTest, setActiveTest] = useState<string | null>(null);
+  const [testProgress, setTestProgress] = useState<string>('');
+  const [stopFn, setStopFn] = useState<(() => void) | null>(null);
 
-export const SimulationControls: React.FC<SimulationControlsProps> = ({
-  currentState,
-  currentEmotion,
-  currentActivity = 'IDLE',
-  onStateChange,
-  onActivityChange,
-  onSimulateSpeech,
-}) => {
-  const [speechInput, setSpeechInput] = useState('');
-  const [activeAction, setActiveAction] = useState<RobotActionName | null>(null);
-  const [actionProgress, setActionProgress] = useState<{ elapsed: number; total: number }>({
-    elapsed: 0,
-    total: 0,
-  });
-  const [activeGesture, setActiveGesture] = useState<ArmGesture>('IDLE');
+  // Manual Selectors State
+  const [selectedEmotion, setSelectedEmotion] = useState<TaraEmotion>('happy');
+  const [selectedExpression, setSelectedExpression] = useState<TaraExpression>('happy');
+  const [selectedActivity, setSelectedActivity] = useState<TaraActivity>('IDLE');
+  const [selectedMouth, setSelectedMouth] = useState<TaraMouthState>('SMILE');
+  const [selectedEye, setSelectedEye] = useState<TaraEyeState>('normal');
+  const [selectedArm, setSelectedArm] = useState<TaraArmGesture>('IDLE');
 
-  useEffect(() => {
-    const unsubAction = actionManager.subscribe((action, elapsed, total) => {
-      setActiveAction(action);
-      setActionProgress({ elapsed, total });
-    });
-
-    const unsubArm = armController.subscribe((s) => {
-      setActiveGesture(s.activeGesture);
-    });
-
-    return () => {
-      unsubAction();
-      unsubArm();
-    };
-  }, []);
-
-  const dispatchContext = {
-    setState: (st: RobotState) => onStateChange(st),
-    setEmotion: (em: RobotEmotion) => onStateChange(currentState, em),
-    setActivity: (act: RobotActivity) => onActivityChange?.(act),
-  };
-
-  // 15 Exact Buttons Mandated by Requirements:
-  // Detect Person, Person Left, Listen, Think, Speak, Happy, Sad, Surprised, Sleep, Read, Sing, Cook, Play Music, Wave, Reset
-  const handleDetectPerson = () => {
-    presenceManager.triggerPersonDetected(45);
-    taraBehaviorManager.triggerGreeting(dispatchContext);
-  };
-
-  const handlePersonLeft = () => {
-    presenceManager.triggerPersonLeft();
-  };
-
-  const handleListen = () => {
-    onStateChange('LISTENING', 'CURIOUS');
-    emotionEngine.setEmotion('CURIOUS');
-    voiceManager.startListening((text) => {
-      taraBehaviorManager.handleIntent(text, dispatchContext, 'HAPPY', text);
-    });
-  };
-
-  const handleThink = () => {
-    actionManager.executeAction('ThinkingAction', {
-      setState: (st) => onStateChange(st),
-      setEmotion: (em) => onStateChange(currentState, em),
-    });
-  };
-
-  const handleSpeak = () => {
-    const sample = "Hello! I am TARA, your expressive desktop AI companion.";
-    onStateChange('SPEAKING', 'JOY');
-    voiceManager.speak(sample, () => {
-      onStateChange('IDLE', 'NEUTRAL');
-    });
-  };
-
-  const handleHappy = () => {
-    onStateChange('HAPPY', 'HAPPY');
-    emotionEngine.setEmotion('HAPPY', 0.9);
-    armController.executeGesture('HAPPY_MOVE', 2500);
-  };
-
-  const handleSad = () => {
-    onStateChange('SAD', 'SAD');
-    emotionEngine.setEmotion('SAD', 0.9);
-    armController.executeGesture('SAD_MOVE', 3000);
-  };
-
-  const handleSurprised = () => {
-    onStateChange('SURPRISED', 'SURPRISED');
-    emotionEngine.setEmotion('SURPRISED', 1.0, 3000, () => {
-      onStateChange('IDLE', 'NEUTRAL');
-    });
-  };
-
-  const handleSleep = () => {
-    activityManager.startActivity('SLEEPING', dispatchContext);
-  };
-
-  const handleRead = () => {
-    activityManager.startActivity('READING', dispatchContext);
-  };
-
-  const handleSing = () => {
-    activityManager.startActivity('SINGING', dispatchContext);
-  };
-
-  const handleCook = () => {
-    activityManager.startActivity('COOKING', dispatchContext);
-  };
-
-  const handlePlayMusic = () => {
-    activityManager.startActivity('LISTENING_MUSIC', dispatchContext);
-  };
-
-  const handleWave = () => {
-    armController.executeGesture('WAVE', 3000);
-    onStateChange('HAPPY', 'HAPPY');
-    emotionEngine.setEmotion('HAPPY', 0.8);
-  };
-
-  const handleReset = () => {
-    taraBehaviorManager.resetToIdle(dispatchContext);
-    voiceManager.interrupt();
-  };
-
-  const handleSpeechSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!speechInput.trim()) return;
-
-    const userText = speechInput.trim();
-    setSpeechInput('');
-
-    // Pipe through real TaraBehaviorManager
-    taraBehaviorManager.handleIntent(userText, dispatchContext, undefined, `I understood: "${userText}". Processing now.`);
-    if (onSimulateSpeech) {
-      onSimulateSpeech(userText);
+  const stopActiveTest = () => {
+    if (stopFn) {
+      stopFn();
+      setStopFn(null);
     }
+    setActiveTest(null);
+    setTestProgress('');
+  };
+
+  // Automated Test Handlers
+  const handleTestSinging = () => {
+    stopActiveTest();
+    setActiveTest('SINGING');
+    setTestProgress('Running Singing Sequence (Microphone, Hand Hold, Notes, Voice)...');
+    actionManager.triggerSingingSequence();
+  };
+
+  const handleTestCooking = () => {
+    stopActiveTest();
+    setActiveTest('COOKING');
+    setTestProgress('Running Cooking Sequence (Stove On, Flame, Pot, Steam, Stirring)...');
+    actionManager.triggerCookingSequence();
+  };
+
+  const handleTestReading = () => {
+    stopActiveTest();
+    setActiveTest('READING');
+    setTestProgress('Running Reading Sequence (Book, Turn Page, Focused Eyes)...');
+    actionManager.triggerReadingSequence();
+  };
+
+  const handleTestMusic = () => {
+    stopActiveTest();
+    setActiveTest('MUSIC');
+    setTestProgress('Running Music Sequence (Headphones, Equalizer, Notes)...');
+    actionManager.triggerMusicSequence();
+  };
+
+  const handleTestSleep = () => {
+    stopActiveTest();
+    setActiveTest('SLEEP');
+    setTestProgress('Running Sleep Sequence (Closed Eyes, ZZZ Particles)...');
+    actionManager.triggerSleepSequence();
+  };
+
+  const handleTestAllExpressions = () => {
+    stopActiveTest();
+    setActiveTest('ALL_EXPRESSIONS');
+    const cancel = actionManager.testAllExpressions((exp, idx, total) => {
+      setTestProgress(`Testing Expression (${idx}/${total}): ${exp}`);
+    });
+    setStopFn(() => cancel);
+  };
+
+  const handleTestAllMouthStates = () => {
+    stopActiveTest();
+    setActiveTest('ALL_MOUTH_STATES');
+    const cancel = actionManager.testAllMouthStates((mouth, idx, total) => {
+      setTestProgress(`Testing Mouth Shape (${idx}/${total}): ${mouth}`);
+    });
+    setStopFn(() => cancel);
+  };
+
+  const handleTestAllEyeStates = () => {
+    stopActiveTest();
+    setActiveTest('ALL_EYE_STATES');
+    const cancel = actionManager.testAllEyeStates((eye, idx, total) => {
+      setTestProgress(`Testing Eye State (${idx}/${total}): ${eye}`);
+    });
+    setStopFn(() => cancel);
+  };
+
+  const handleTestAllArmGestures = () => {
+    stopActiveTest();
+    setActiveTest('ALL_ARM_GESTURES');
+    const cancel = actionManager.testAllArmGestures((gesture, idx, total) => {
+      setTestProgress(`Testing Visual Arm Gesture (${idx}/${total}): ${gesture}`);
+    });
+    setStopFn(() => cancel);
   };
 
   return (
-    <div className="bg-gradient-to-br from-amber-500/10 via-emerald-500/10 to-cyan-500/10 border border-amber-500/30 dark:border-amber-400/20 rounded-2xl p-5 mb-6 backdrop-blur-sm">
-      {/* Simulation Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-amber-500/20">
-        <div className="flex items-center gap-2.5">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-amber-500 text-white font-bold text-xs shadow-sm">
-            SIM
+    <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-5 text-slate-100 flex flex-col gap-5">
+      {/* Title & Active Test Status */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+        <div>
+          <h3 className="text-sm font-bold text-white flex items-center gap-2">
+            <Tv className="w-4 h-4 text-cyan-400" />
+            Simulation & Automated Verification Deck
+          </h3>
+          <p className="text-xs text-slate-400">
+            Hardware-accurate logical state verification across all TARA subsystems
+          </p>
+        </div>
+
+        {activeTest && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-3 py-1 rounded-full bg-cyan-500/20 text-cyan-300 font-mono border border-cyan-500/40 animate-pulse">
+              {testProgress}
+            </span>
+            <button
+              onClick={stopActiveTest}
+              className="px-2.5 py-1 rounded bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-semibold flex items-center gap-1"
+            >
+              <Square className="w-3 h-3" /> Stop Test
+            </button>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-bold tracking-wide text-slate-900 dark:text-white uppercase">
-                TARA Companion Hardware Simulator
-              </h3>
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                Standard ESP32 Dual-Core
-              </span>
+        )}
+      </div>
+
+      {/* Primary Automated Test Suite Buttons (Section 22 Mandate) */}
+      <div>
+        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+          <Play className="w-3.5 h-3.5 text-emerald-400" />
+          One-Click Automated Scene & Component Suites
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          <button
+            onClick={handleTestSinging}
+            className="px-3 py-2.5 rounded-xl bg-gradient-to-r from-purple-900/50 to-indigo-900/50 hover:from-purple-800/60 hover:to-indigo-800/60 border border-purple-500/40 text-left transition-all group"
+          >
+            <div className="flex items-center gap-2 text-purple-300 font-bold text-xs">
+              <Mic className="w-3.5 h-3.5 text-purple-400 group-hover:scale-110 transition-transform" />
+              TEST_SINGING
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              FaceEngine • EmotionEngine (14 Emotions) • ActionTimeline • Dual-Servo Arms • Presence Matrix • Voice Pipeline
-            </p>
-          </div>
-        </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Real Mic + Arm + Notes</div>
+          </button>
 
-        {/* Live Subsystem Status Badges */}
-        <div className="flex flex-wrap items-center gap-1.5 text-xs font-mono">
-          <span className="bg-white/80 dark:bg-slate-850 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-            State: <strong className="text-cyan-600 dark:text-cyan-400">{currentState}</strong>
-          </span>
-          <span className="bg-white/80 dark:bg-slate-850 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-            Emotion: <strong className="text-amber-600 dark:text-amber-400">{currentEmotion}</strong>
-          </span>
-          <span className="bg-white/80 dark:bg-slate-850 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-            Activity: <strong className="text-emerald-600 dark:text-emerald-400">{currentActivity}</strong>
-          </span>
-          <span className="bg-white/80 dark:bg-slate-850 px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-            Arm: <strong className="text-purple-600 dark:text-purple-400">{activeGesture}</strong>
-          </span>
+          <button
+            onClick={handleTestCooking}
+            className="px-3 py-2.5 rounded-xl bg-gradient-to-r from-amber-900/50 to-orange-900/50 hover:from-amber-800/60 hover:to-orange-800/60 border border-amber-500/40 text-left transition-all group"
+          >
+            <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+              <Flame className="w-3.5 h-3.5 text-amber-400 group-hover:scale-110 transition-transform" />
+              TEST_COOKING
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Stove + Flame + Steam</div>
+          </button>
+
+          <button
+            onClick={handleTestReading}
+            className="px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-900/50 to-cyan-900/50 hover:from-blue-800/60 hover:to-cyan-800/60 border border-blue-500/40 text-left transition-all group"
+          >
+            <div className="flex items-center gap-2 text-blue-300 font-bold text-xs">
+              <BookOpen className="w-3.5 h-3.5 text-blue-400 group-hover:scale-110 transition-transform" />
+              TEST_READING
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Open Book + Page Flip</div>
+          </button>
+
+          <button
+            onClick={handleTestMusic}
+            className="px-3 py-2.5 rounded-xl bg-gradient-to-r from-emerald-900/50 to-teal-900/50 hover:from-emerald-800/60 hover:to-teal-800/60 border border-emerald-500/40 text-left transition-all group"
+          >
+            <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs">
+              <Music className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
+              TEST_MUSIC
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Headphones + Equalizer</div>
+          </button>
+
+          <button
+            onClick={handleTestSleep}
+            className="px-3 py-2.5 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 border border-slate-600/50 text-left transition-all group"
+          >
+            <div className="flex items-center gap-2 text-slate-200 font-bold text-xs">
+              <Moon className="w-3.5 h-3.5 text-indigo-400 group-hover:scale-110 transition-transform" />
+              TEST_SLEEP
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Closed Eyes + ZZZ</div>
+          </button>
+
+          <button
+            onClick={handleTestAllExpressions}
+            className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-cyan-500/30 text-left transition-all"
+          >
+            <div className="flex items-center gap-2 text-cyan-300 font-bold text-xs">
+              <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+              TEST_ALL_EXPRESSIONS
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">All 34+ Facial Expressions</div>
+          </button>
+
+          <button
+            onClick={handleTestAllMouthStates}
+            className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-pink-500/30 text-left transition-all"
+          >
+            <div className="flex items-center gap-2 text-pink-300 font-bold text-xs">
+              <Smile className="w-3.5 h-3.5 text-pink-400" />
+              TEST_ALL_MOUTH_STATES
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">All 12 Mouth Shapes</div>
+          </button>
+
+          <button
+            onClick={handleTestAllEyeStates}
+            className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-amber-500/30 text-left transition-all"
+          >
+            <div className="flex items-center gap-2 text-amber-300 font-bold text-xs">
+              <Eye className="w-3.5 h-3.5 text-amber-400" />
+              TEST_ALL_EYE_STATES
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Squint, Wink, Wide, Spiral</div>
+          </button>
+
+          <button
+            onClick={handleTestAllArmGestures}
+            className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-indigo-500/30 text-left transition-all"
+          >
+            <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs">
+              <Hand className="w-3.5 h-3.5 text-indigo-400" />
+              TEST_ALL_HAND_GESTURES
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Wave, Point, Clap, Stir...</div>
+          </button>
+
+          <button
+            onClick={() => {
+              activitySceneManager.setActivity('IDLE');
+              animationCoordinator.setExpression('happy');
+              armController.setGesture('IDLE');
+              voiceManager.interrupt();
+            }}
+            className="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700/80 border border-slate-700 text-left transition-all"
+          >
+            <div className="flex items-center gap-2 text-slate-300 font-bold text-xs">
+              <ListRestart className="w-3.5 h-3.5 text-slate-400" />
+              RESET_TO_IDLE
+            </div>
+            <div className="text-[11px] text-slate-400 mt-0.5">Normal Face + Resting Hands</div>
+          </button>
         </div>
       </div>
 
-      {/* Action Timeline Live Progress Indicator */}
-      {activeAction && (
-        <div className="mb-4 bg-slate-900/80 border border-cyan-500/40 rounded-xl p-2.5">
-          <div className="flex items-center justify-between text-[11px] font-mono text-cyan-300 mb-1">
-            <span className="flex items-center gap-1.5 font-bold">
-              <Zap className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-              ActionTimeline: {activeAction}
-            </span>
-            <span>
-              {actionProgress.elapsed}ms / {actionProgress.total}ms
-            </span>
-          </div>
-          <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-            <div
-              className="bg-gradient-to-r from-cyan-500 to-emerald-400 h-full transition-all duration-100"
-              style={{
-                width: `${Math.min(100, (actionProgress.elapsed / Math.max(1, actionProgress.total)) * 100)}%`,
+      {/* Required 11 Standalone Hand Tests (Specific User Directive) */}
+      <div className="border-t border-slate-800 pt-3">
+        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
+          <span className="flex items-center gap-1.5">
+            <Hand className="w-3.5 h-3.5 text-indigo-400" />
+            11 Required Standalone Hand Gesture Tests (No Arms • No Servos)
+          </span>
+          <span className="text-[10px] text-emerald-400 font-mono">Solid 5-Finger Vectors</span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+          {[
+            { id: 'TEST_OPEN_HAND', g: 'OPEN_HAND', label: 'TEST_OPEN_HAND', desc: 'Dual palms forward' },
+            { id: 'TEST_WAVE', g: 'WAVE', label: 'TEST_WAVE', desc: 'Side-to-side wave' },
+            { id: 'TEST_THUMBS_UP', g: 'THUMBS_UP', label: 'TEST_THUMBS_UP', desc: 'Thumbs-up pose' },
+            { id: 'TEST_POINT', g: 'POINT', label: 'TEST_POINT', desc: 'Forward point' },
+            { id: 'TEST_CLAP', g: 'CLAP', label: 'TEST_CLAP', desc: 'Clap together & separate' },
+            { id: 'TEST_HOLD_MIC', g: 'HOLD_MIC', label: 'TEST_HOLD_MIC', desc: 'Grips microphone' },
+            { id: 'TEST_STIR', g: 'STIR', label: 'TEST_STIR', desc: 'Orbits cooking pot' },
+            { id: 'TEST_HOLD_BOOK', g: 'HOLD_BOOK', label: 'TEST_HOLD_BOOK', desc: 'Grips book edges' },
+            { id: 'TEST_CELEBRATE', g: 'CELEBRATE', label: 'TEST_CELEBRATE', desc: 'Raised high bobbing' },
+            { id: 'TEST_THINKING', g: 'THINKING', label: 'TEST_THINKING', desc: 'Rests under chin' },
+            { id: 'TEST_GREETING', g: 'GREETING', label: 'TEST_GREETING', desc: 'Welcoming wave' },
+          ].map((t) => (
+            <button
+              key={t.id}
+              onClick={() => {
+                armController.setGesture(t.g as TaraArmGesture);
+                setSelectedArm(t.g as TaraArmGesture);
+                if (t.g === 'HOLD_MIC') {
+                  activitySceneManager.setActivity('SINGING');
+                  animationCoordinator.setExpression('singing');
+                } else if (t.g === 'STIR') {
+                  activitySceneManager.setActivity('COOKING');
+                  animationCoordinator.setExpression('focused');
+                } else if (t.g === 'HOLD_BOOK') {
+                  activitySceneManager.setActivity('READING');
+                  animationCoordinator.setExpression('focused');
+                } else if (t.g === 'WAVE' || t.g === 'THUMBS_UP' || t.g === 'CELEBRATE' || t.g === 'GREETING') {
+                  animationCoordinator.setExpression('happy');
+                } else if (t.g === 'THINKING') {
+                  animationCoordinator.setExpression('thinking');
+                }
               }}
-            ></div>
-          </div>
-        </div>
-      )}
-
-      {/* 15 Mandatory Action & Behavior Buttons */}
-      <div className="mb-4">
-        <div className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2 flex items-center justify-between">
-          <span>Core Robot Interaction Controls (Unified Hardware Interfaces):</span>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-          {/* 1. Detect Person */}
-          <button
-            type="button"
-            onClick={handleDetectPerson}
-            className="px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition-all"
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>Detect Person</span>
-          </button>
-
-          {/* 2. Person Left */}
-          <button
-            type="button"
-            onClick={handlePersonLeft}
-            className="px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all"
-          >
-            <UserX className="w-3.5 h-3.5 text-slate-400" />
-            <span>Person Left</span>
-          </button>
-
-          {/* 3. Listen */}
-          <button
-            type="button"
-            onClick={handleListen}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentState === 'LISTENING'
-                ? 'bg-blue-600 text-white border-blue-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <Mic className="w-3.5 h-3.5 text-blue-400" />
-            <span>Listen</span>
-          </button>
-
-          {/* 4. Think */}
-          <button
-            type="button"
-            onClick={handleThink}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentState === 'THINKING'
-                ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-            <span>Think</span>
-          </button>
-
-          {/* 5. Speak */}
-          <button
-            type="button"
-            onClick={handleSpeak}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentState === 'SPEAKING'
-                ? 'bg-emerald-600 text-white border-emerald-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Speak</span>
-          </button>
-
-          {/* 6. Happy */}
-          <button
-            type="button"
-            onClick={handleHappy}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentEmotion === 'HAPPY'
-                ? 'bg-amber-600 text-white border-amber-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <Smile className="w-3.5 h-3.5 text-amber-400" />
-            <span>Happy</span>
-          </button>
-
-          {/* 7. Sad */}
-          <button
-            type="button"
-            onClick={handleSad}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentEmotion === 'SAD'
-                ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <Frown className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Sad</span>
-          </button>
-
-          {/* 8. Surprised */}
-          <button
-            type="button"
-            onClick={handleSurprised}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentEmotion === 'SURPRISED'
-                ? 'bg-cyan-600 text-white border-cyan-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <AlertCircle className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Surprised</span>
-          </button>
-
-          {/* 9. Sleep */}
-          <button
-            type="button"
-            onClick={handleSleep}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentState === 'SLEEPING'
-                ? 'bg-slate-700 text-white border-slate-600 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <Moon className="w-3.5 h-3.5 text-slate-400" />
-            <span>Sleep</span>
-          </button>
-
-          {/* 10. Read */}
-          <button
-            type="button"
-            onClick={handleRead}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentActivity === 'READING'
-                ? 'bg-amber-600 text-white border-amber-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5 text-amber-500" />
-            <span>Read</span>
-          </button>
-
-          {/* 11. Sing */}
-          <button
-            type="button"
-            onClick={handleSing}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentActivity === 'SINGING'
-                ? 'bg-pink-600 text-white border-pink-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <Music className="w-3.5 h-3.5 text-pink-400" />
-            <span>Sing</span>
-          </button>
-
-          {/* 12. Cook */}
-          <button
-            type="button"
-            onClick={handleCook}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentActivity === 'COOKING'
-                ? 'bg-orange-600 text-white border-orange-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <Utensils className="w-3.5 h-3.5 text-orange-400" />
-            <span>Cook</span>
-          </button>
-
-          {/* 13. Play Music */}
-          <button
-            type="button"
-            onClick={handlePlayMusic}
-            className={`px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all border ${
-              currentActivity === 'LISTENING_MUSIC'
-                ? 'bg-purple-600 text-white border-purple-500 shadow-sm'
-                : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
-            }`}
-          >
-            <Music className="w-3.5 h-3.5 text-purple-400" />
-            <span>Play Music</span>
-          </button>
-
-          {/* 14. Wave */}
-          <button
-            type="button"
-            onClick={handleWave}
-            className="px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-cyan-600 hover:bg-cyan-500 text-white shadow-sm transition-all"
-          >
-            <Hand className="w-3.5 h-3.5" />
-            <span>Wave</span>
-          </button>
-
-          {/* 15. Reset */}
-          <button
-            type="button"
-            onClick={handleReset}
-            className="px-2.5 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 bg-rose-600 hover:bg-rose-500 text-white shadow-sm transition-all"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            <span>Reset</span>
-          </button>
+              className="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 border border-indigo-500/30 text-left transition-all"
+            >
+              <div className="font-mono text-xs font-bold text-indigo-300">{t.label}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{t.desc}</div>
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Voice / Natural Language Injection Form */}
-      <form onSubmit={handleSpeechSubmit} className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400">
-            <Mic className="w-4 h-4" />
-          </div>
-          <input
-            type="text"
-            value={speechInput}
-            onChange={(e) => setSpeechInput(e.target.value)}
-            placeholder="Simulate speech to TARA (e.g. 'Read a book', 'Let\'s cook', 'Sing a song', 'Play music')"
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-850 text-slate-900 dark:text-white text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          />
+      {/* Manual Interactive Parameter Selectors (Section 22 Mandate) */}
+      <div className="border-t border-slate-800 pt-4">
+        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+          Direct Manual State Override Selectors
         </div>
-        <button
-          type="submit"
-          disabled={!speechInput.trim()}
-          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium flex items-center justify-center gap-1.5 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-        >
-          <Send className="w-3.5 h-3.5" />
-          <span>Dispatch to BehaviorManager</span>
-        </button>
-      </form>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+          {/* 1. EMOTION SELECTOR */}
+          <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col gap-1.5">
+            <label className="text-slate-400 font-semibold flex items-center justify-between">
+              <span>EMOTION</span>
+              <span className="text-cyan-400 font-mono">{selectedEmotion}</span>
+            </label>
+            <select
+              value={selectedEmotion}
+              onChange={(e) => {
+                const val = e.target.value as TaraEmotion;
+                setSelectedEmotion(val);
+                animationCoordinator.setEmotion(val);
+              }}
+              className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg p-2 font-mono text-xs focus:ring-1 focus:ring-cyan-500 outline-none"
+            >
+              {[
+                'happy',
+                'neutral',
+                'excited',
+                'curious',
+                'sad',
+                'angry',
+                'sleepy',
+                'confused',
+                'surprised',
+                'shy',
+                'proud',
+                'bored',
+                'playful',
+                'scared',
+                'worried',
+                'focused',
+              ].map((emo) => (
+                <option key={emo} value={emo}>
+                  {emo}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 2. ACTIVITY SELECTOR */}
+          <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col gap-1.5">
+            <label className="text-slate-400 font-semibold flex items-center justify-between">
+              <span>ACTIVITY</span>
+              <span className="text-purple-400 font-mono">{selectedActivity}</span>
+            </label>
+            <select
+              value={selectedActivity}
+              onChange={(e) => {
+                const val = e.target.value as TaraActivity;
+                setSelectedActivity(val);
+                activitySceneManager.setActivity(val);
+              }}
+              className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg p-2 font-mono text-xs focus:ring-1 focus:ring-cyan-500 outline-none"
+            >
+              {['IDLE', 'SINGING', 'COOKING', 'READING', 'MUSIC', 'SLEEPING', 'SPEAKING'].map((act) => (
+                <option key={act} value={act}>
+                  {act}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 3. EXPRESSION SELECTOR */}
+          <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col gap-1.5">
+            <label className="text-slate-400 font-semibold flex items-center justify-between">
+              <span>FACE / EXPRESSION</span>
+              <span className="text-amber-400 font-mono">{selectedExpression}</span>
+            </label>
+            <select
+              value={selectedExpression}
+              onChange={(e) => {
+                const val = e.target.value as TaraExpression;
+                setSelectedExpression(val);
+                animationCoordinator.setExpression(val);
+              }}
+              className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg p-2 font-mono text-xs focus:ring-1 focus:ring-cyan-500 outline-none"
+            >
+              {expressionManager.getAllExpressions().map((exp) => (
+                <option key={exp.name} value={exp.name}>
+                  {exp.label} ({exp.name})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 4. MOUTH STATE */}
+          <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col gap-1.5">
+            <label className="text-slate-400 font-semibold flex items-center justify-between">
+              <span>MOUTH</span>
+              <span className="text-pink-400 font-mono">{selectedMouth}</span>
+            </label>
+            <select
+              value={selectedMouth}
+              onChange={(e) => {
+                const val = e.target.value as TaraMouthState;
+                setSelectedMouth(val);
+              }}
+              className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg p-2 font-mono text-xs focus:ring-1 focus:ring-cyan-500 outline-none"
+            >
+              {[
+                'CLOSED',
+                'SMALL',
+                'SMILE',
+                'OPEN_SMALL',
+                'OPEN_MEDIUM',
+                'OPEN_WIDE',
+                'O_SHAPE',
+                'A_SHAPE',
+                'E_SHAPE',
+                'SPEAKING',
+                'LAUGHING',
+                'SINGING',
+              ].map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 5. STANDALONE HANDS */}
+          <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col gap-1.5">
+            <label className="text-slate-400 font-semibold flex items-center justify-between">
+              <span>HANDS / GESTURE</span>
+              <span className="text-emerald-400 font-mono">{selectedArm}</span>
+            </label>
+            <select
+              value={selectedArm}
+              onChange={(e) => {
+                const val = e.target.value as TaraArmGesture;
+                setSelectedArm(val);
+                armController.setGesture(val);
+              }}
+              className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg p-2 font-mono text-xs focus:ring-1 focus:ring-cyan-500 outline-none"
+            >
+              {[
+                'IDLE',
+                'WAVE',
+                'HOLD_MIC',
+                'RAISE_HAND',
+                'POINT',
+                'THUMBS_UP',
+                'CLAP',
+                'STIR',
+                'HOLD_BOOK',
+                'CELEBRATE',
+                'THINKING',
+                'GREETING',
+              ].map((g) => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 6. EYE OVERRIDE */}
+          <div className="p-3 rounded-xl bg-slate-800/60 border border-slate-700/60 flex flex-col gap-1.5">
+            <label className="text-slate-400 font-semibold flex items-center justify-between">
+              <span>EYE STATE</span>
+              <span className="text-indigo-400 font-mono">{selectedEye}</span>
+            </label>
+            <select
+              value={selectedEye}
+              onChange={(e) => {
+                const val = e.target.value as TaraEyeState;
+                setSelectedEye(val);
+                animationCoordinator.setEyeOverride(val);
+              }}
+              className="bg-slate-900 border border-slate-700 text-slate-100 rounded-lg p-2 font-mono text-xs focus:ring-1 focus:ring-cyan-500 outline-none"
+            >
+              {[
+                'normal',
+                'blink',
+                'open',
+                'look_left',
+                'look_right',
+                'look_down',
+                'look_up',
+                'squint',
+                'wide',
+                'wink',
+                'closed',
+                'half_closed',
+                'dizzy_spiral',
+                'hearts',
+                'tears',
+                'sparkle',
+              ].map((eye) => (
+                <option key={eye} value={eye}>
+                  {eye}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };

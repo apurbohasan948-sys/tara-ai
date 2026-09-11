@@ -1,179 +1,127 @@
+/**
+ * PresenceRadar.tsx
+ * Simulated 24GHz mmWave Human Radar / PIR Distance Sensing Widget
+ */
+
 import React, { useEffect, useState } from 'react';
-import { PresenceInfo, PresenceSensorType } from '../types';
-import { presenceManager, MockPresenceSensor } from '../services/PresenceManager';
-import { Radio, UserCheck, UserX, Volume2, Clock, AlertCircle } from 'lucide-react';
+import { Radio, Users, Eye, Sliders } from 'lucide-react';
+import { presenceManager } from '../services/PresenceManager';
+import { PresenceState } from '../types';
 
 export const PresenceRadar: React.FC = () => {
-  const [info, setInfo] = useState<PresenceInfo>(presenceManager.getInfo());
-  const [cooldownRemainingSec, setCooldownRemainingSec] = useState<number>(0);
+  const [presence, setPresence] = useState<PresenceState>(presenceManager.getState());
 
   useEffect(() => {
-    const unsub = presenceManager.subscribe((newInfo) => {
-      setInfo(newInfo);
-    });
-
-    const interval = setInterval(() => {
-      const now = Date.now();
-      const current = presenceManager.getInfo();
-      const elapsed = now - current.lastGreetingTime;
-      const remaining = Math.max(0, Math.ceil((current.greetingCooldownMs - elapsed) / 1000));
-      setCooldownRemainingSec(remaining);
-    }, 1000);
-
-    return () => {
-      unsub();
-      clearInterval(interval);
-    };
+    const unsub = presenceManager.subscribe((st) => setPresence(st));
+    return () => unsub();
   }, []);
 
-  const handleSensorTypeChange = (type: PresenceSensorType) => {
-    presenceManager.setSensor(new MockPresenceSensor(type));
-  };
-
-  const handleDetectPerson = (dist: number) => {
-    presenceManager.triggerPersonDetected(dist);
-  };
-
-  const handlePersonLeft = () => {
-    presenceManager.triggerPersonLeft();
-  };
-
-  const handleAudioActivity = () => {
-    presenceManager.triggerAudioActivity();
+  const handleDistanceChange = (dist: number) => {
+    presenceManager.setPresence(dist <= 150, dist, dist <= 150 ? 0.7 : 0.0);
   };
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 shadow-lg">
-      <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-800">
+    <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 text-slate-100 flex flex-col gap-4">
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+            <Radio className="w-5 h-5 animate-pulse" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-white flex items-center gap-2">
+              Human Presence Detection (mmWave / PIR)
+            </h3>
+            <p className="text-xs text-slate-400">
+              Auto-wakes TARA from deep sleep when someone approaches the desk
+            </p>
+          </div>
+        </div>
+
         <div className="flex items-center gap-2">
-          <Radio className="w-4 h-4 text-emerald-400" />
-          <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-            Presence & Proximity Sensor Matrix
-          </h4>
-        </div>
-
-        {/* Sensor selector */}
-        <div className="flex items-center gap-1.5">
-          {(['ULTRASONIC', 'PIR', 'TOF', 'NONE'] as PresenceSensorType[]).map((st) => (
-            <button
-              key={st}
-              type="button"
-              onClick={() => handleSensorTypeChange(st)}
-              className={`text-[9px] font-mono px-2 py-0.5 rounded border transition-all ${
-                info.sensorType === st
-                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
-                  : 'bg-slate-800 text-slate-400 border-slate-700 hover:text-white'
+          <span
+            className={`text-xs px-2.5 py-1 rounded-full font-mono font-semibold flex items-center gap-1.5 ${
+              presence.detected
+                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                : 'bg-slate-800 text-slate-400 border border-slate-700'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                presence.detected ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'
               }`}
+            />
+            {presence.detected ? 'HUMAN DETECTED' : 'ZONE EMPTY'}
+          </span>
+        </div>
+      </div>
+
+      {/* Radar Visualizer */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
+        {/* Radar Graphic Canvas */}
+        <div className="relative h-44 bg-slate-950 rounded-xl border border-slate-800 flex items-center justify-center overflow-hidden">
+          {/* Radar Circles */}
+          <div className="absolute w-36 h-36 rounded-full border border-cyan-500/20" />
+          <div className="absolute w-24 h-24 rounded-full border border-cyan-500/30" />
+          <div className="absolute w-12 h-12 rounded-full border border-cyan-500/40" />
+
+          {/* Sweep Hand */}
+          <div className="absolute w-20 h-0.5 bg-gradient-to-r from-transparent to-cyan-400 origin-left animate-spin" />
+
+          {/* Target Blip */}
+          {presence.detected && (
+            <div
+              className="absolute w-3.5 h-3.5 rounded-full bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)] animate-ping"
+              style={{
+                top: `${45 - (presence.distanceCm / 150) * 25}%`,
+                left: `${50 + ((presence.distanceCm % 40) - 20)}%`,
+              }}
+            />
+          )}
+
+          {/* Center Sensor */}
+          <div className="w-3 h-3 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)] z-10" />
+          <span className="absolute bottom-2 text-[10px] font-mono text-slate-500">
+            TARA 24GHz RADAR FOV: 120°
+          </span>
+        </div>
+
+        {/* Distance Controls & Status */}
+        <div className="space-y-3.5 text-xs">
+          <div className="flex justify-between items-center text-slate-300">
+            <span className="font-semibold">Simulated Distance:</span>
+            <span className="font-mono text-cyan-300 font-bold">{presence.distanceCm} cm</span>
+          </div>
+          <input
+            type="range"
+            min="20"
+            max="200"
+            value={presence.distanceCm}
+            onChange={(e) => handleDistanceChange(Number(e.target.value))}
+            className="w-full accent-cyan-400 bg-slate-800 rounded-lg cursor-pointer"
+          />
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleDistanceChange(40)}
+              className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 flex-1 font-mono"
             >
-              {st === 'NONE' ? 'NO-SENSOR' : st}
+              Near (40cm)
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Radar Status Panel */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 mb-3">
-        {/* Presence State */}
-        <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between">
-          <div>
-            <div className="text-[10px] text-slate-400 font-mono">PRESENCE STATE</div>
-            <div className={`text-xs font-bold font-mono mt-0.5 ${
-              info.state === 'PERSON_NEAR' ? 'text-emerald-400' :
-              info.state === 'PERSON_DETECTED' ? 'text-cyan-400' :
-              info.state === 'PERSON_LEFT' ? 'text-amber-400' : 'text-slate-400'
-            }`}>
-              {info.state}
-            </div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center border border-slate-800">
-            {info.state === 'NO_PERSON' ? (
-              <UserX className="w-4 h-4 text-slate-500" />
-            ) : (
-              <UserCheck className="w-4 h-4 text-emerald-400 animate-pulse" />
-            )}
+            <button
+              onClick={() => handleDistanceChange(90)}
+              className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 flex-1 font-mono"
+            >
+              Mid (90cm)
+            </button>
+            <button
+              onClick={() => handleDistanceChange(180)}
+              className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-750 text-slate-200 border border-slate-700 flex-1 font-mono"
+            >
+              Away (180cm)
+            </button>
           </div>
         </div>
-
-        {/* Proximity Distance */}
-        <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between">
-          <div>
-            <div className="text-[10px] text-slate-400 font-mono">TARGET DISTANCE</div>
-            <div className="text-xs font-bold text-white font-mono mt-0.5">
-              {info.sensorType === 'NONE' ? 'N/A (No Sensor)' : `${info.distanceCm} cm`}
-            </div>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center border border-slate-800 font-mono text-[10px] text-cyan-400">
-            {info.distanceCm < 60 ? 'NEAR' : info.distanceCm < 150 ? 'MID' : 'FAR'}
-          </div>
-        </div>
-
-        {/* Greeting Cooldown */}
-        <div className="bg-slate-950/80 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between">
-          <div>
-            <div className="text-[10px] text-slate-400 font-mono">GREETING COOLDOWN</div>
-            <div className="text-xs font-bold font-mono mt-0.5 text-amber-400 flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              {cooldownRemainingSec > 0 ? `${cooldownRemainingSec}s remaining` : 'Ready to Greet'}
-            </div>
-          </div>
-          <div className="text-[9px] font-mono text-slate-500 text-right">
-            Min: 5m
-          </div>
-        </div>
-      </div>
-
-      {/* Audio Activity Alert Banner */}
-      {info.audioActivityDetected && (
-        <div className="mb-3 px-3 py-1.5 rounded-lg bg-indigo-950/60 border border-indigo-700/60 text-[11px] text-indigo-300 flex items-center gap-2">
-          <Volume2 className="w-4 h-4 text-indigo-400 animate-ping" />
-          <span>Microphone detected <strong>AUDIO_ACTIVITY</strong> (distinct from physical human proximity)</span>
-        </div>
-      )}
-
-      {info.sensorType === 'NONE' && (
-        <div className="mb-3 px-3 py-1.5 rounded-lg bg-slate-800/60 border border-slate-700/60 text-[10px] text-slate-300 flex items-center gap-1.5 font-mono">
-          <AlertCircle className="w-3.5 h-3.5 text-amber-400" />
-          <span>No-Sensor Mode active: TARA uses harmless time & inactivity autonomy instead of physical proximity.</span>
-        </div>
-      )}
-
-      {/* Quick Test Trigger Buttons */}
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={() => handleDetectPerson(45)}
-          className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-sm flex items-center gap-1.5"
-        >
-          <UserCheck className="w-3.5 h-3.5" />
-          <span>Detect Person (Near ~45cm)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => handleDetectPerson(140)}
-          className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white transition-all shadow-sm flex items-center gap-1.5"
-        >
-          <UserCheck className="w-3.5 h-3.5" />
-          <span>Detect Person (Mid ~140cm)</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={handlePersonLeft}
-          className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center gap-1.5"
-        >
-          <UserX className="w-3.5 h-3.5" />
-          <span>Person Left</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={handleAudioActivity}
-          className="text-xs font-semibold px-3 py-1.5 rounded-xl bg-indigo-900/80 hover:bg-indigo-800 text-indigo-200 border border-indigo-700 transition-all flex items-center gap-1.5"
-        >
-          <Volume2 className="w-3.5 h-3.5" />
-          <span>Simulate Audio/Clap Activity</span>
-        </button>
       </div>
     </div>
   );
