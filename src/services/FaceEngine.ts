@@ -15,6 +15,8 @@ import { activitySceneManager } from './ActivitySceneManager';
 import { animationCoordinator, CoordinatedFrame } from './AnimationCoordinator';
 import { armController } from './ArmController';
 import { HandRenderer } from './HandRenderer';
+import { gameEngine } from './games/GameEngine';
+import { GameRenderer } from './games/GameRenderer';
 
 export interface FaceEngineOptions {
   width: number;
@@ -131,6 +133,21 @@ export class FaceEngine {
     const w = this.canvas.width;
     const h = this.canvas.height;
     const ctx = this.ctx;
+
+    // DIRECT-DISPLAY GAME SYSTEM:
+    // If a game or autonomous game invitation is active, render the game board directly on TARA's screen!
+    if (gameEngine.getActiveGame() !== 'NONE' || gameEngine.isInvitationActive()) {
+      GameRenderer.render(ctx, gameEngine.getState(), frame, colors, w, h);
+
+      // Apply scanline filter on top of game graphics if enabled
+      if (this.options.showScanlines) {
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+        for (let y = 0; y < h; y += 3) {
+          ctx.fillRect(0, y, w, 1);
+        }
+      }
+      return;
+    }
 
     // 1. LAYER: BASE BACKGROUND (OLED DEEP BLACK)
     ctx.fillStyle = colors.bg;

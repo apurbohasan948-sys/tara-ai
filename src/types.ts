@@ -131,9 +131,27 @@ export type TaraGameType =
   | 'ROCK_PAPER_SCISSORS'
   | 'MEMORY_MATCH'
   | 'GUESS_NUMBER'
+  | 'HIGHER_LOWER'
+  | 'CONNECT_FOUR'
+  | 'PATTERN_MEMORY'
   | 'REACTION'
   | 'SIMON_SAYS'
+  | 'DICE_GAME'
+  | 'QUICK_REACTION'
   | 'TRIVIA';
+
+export type GameVoiceState =
+  | 'GAME_IDLE'
+  | 'GAME_STARTING'
+  | 'GAME_ASKING'
+  | 'GAME_LISTENING'
+  | 'GAME_PROCESSING'
+  | 'GAME_INVALID_INPUT'
+  | 'GAME_ACTION_ACCEPTED'
+  | 'GAME_TURN_TARA'
+  | 'GAME_TURN_PLAYER'
+  | 'GAME_RESULT'
+  | 'GAME_FINISHED';
 
 export type TaraActivity =
   | 'IDLE'

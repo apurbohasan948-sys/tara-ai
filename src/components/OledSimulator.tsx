@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { faceEngine, FaceEngineOptions } from '../services/FaceEngine';
 import { animationCoordinator } from '../services/AnimationCoordinator';
+import { gameEngine } from '../services/games/GameEngine';
 
 export const OledSimulator: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -30,6 +31,16 @@ export const OledSimulator: React.FC = () => {
   const [showArms, setShowArms] = useState<boolean>(true);
   const [fps, setFps] = useState<number>(30);
   const [scale, setScale] = useState<number>(1.75); // zoom scale
+  const [gameActive, setGameActive] = useState<boolean>(gameEngine.getActiveGame() !== 'NONE');
+  const [activeGameType, setActiveGameType] = useState(gameEngine.getActiveGame());
+
+  useEffect(() => {
+    const unsub = gameEngine.subscribe(() => {
+      setGameActive(gameEngine.getActiveGame() !== 'NONE' || gameEngine.isInvitationActive());
+      setActiveGameType(gameEngine.getActiveGame());
+    });
+    return () => unsub();
+  }, []);
 
   useEffect(() => {
     if (canvasRef.current) {
@@ -106,6 +117,22 @@ export const OledSimulator: React.FC = () => {
           <div className="w-6 h-1 bg-slate-500 rounded-full" />
         </div>
       </div>
+
+      {/* Direct Game System Active Banner */}
+      {gameActive && (
+        <div className="mt-3 inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-xs font-mono shadow-md animate-fade-in">
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping" />
+          <span>
+            <strong>SCREEN RUNNING:</strong> {activeGameType} (Say move into mic or use voice simulator)
+          </span>
+          <button
+            onClick={() => gameEngine.exitGame()}
+            className="ml-2 px-2 py-0.5 rounded bg-rose-900/60 hover:bg-rose-800 text-rose-200 text-[10px] border border-rose-700/50 transition-colors"
+          >
+            Exit Game
+          </button>
+        </div>
+      )}
 
       {/* Screen & Palette Quick Controls Bar */}
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2 bg-slate-900/80 backdrop-blur p-2.5 rounded-xl border border-slate-800 text-xs text-slate-300">

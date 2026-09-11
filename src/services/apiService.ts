@@ -12,6 +12,7 @@ import { actionManager } from './ActionManager';
 import { animationCoordinator } from './AnimationCoordinator';
 import { armController } from './ArmController';
 import { autonomousLifeManager } from './autonomous/AutonomousLifeManager';
+import { gameEngine } from './games/GameEngine';
 import { informationSearchManager } from './InformationSearchManager';
 import { musicManager } from './MusicManager';
 import { personalityEngine } from './PersonalityEngine';
@@ -199,6 +200,108 @@ export class ApiService {
 
     personalityMemory.recordInteraction();
 
+    // 0. DIRECT DISPLAY GAME ROUTING:
+    // If a game is active or an invitation is pending, feed input directly into the local GameEngine!
+    if (gameEngine.getActiveGame() !== 'NONE' || gameEngine.isInvitationActive()) {
+      this.isThinking = false;
+      const parseResult = gameEngine.handleVoiceInput(trimmed);
+      const gameReply = parseResult.valid
+        ? `[Game Action]: ${gameEngine.getState().gameStatusText}`
+        : (gameEngine.getState().lastErrorGuidance || "I didn't catch that game move. Try again!");
+      this.appendTaraReply(gameReply, 'playful');
+      return gameReply;
+    }
+
+    // 0b. Game Launch Intent Detection:
+    const lower = trimmed.toLowerCase();
+    if (
+      lower.includes('play tic tac toe') ||
+      lower.includes('start tic tac toe') ||
+      lower.includes('টিক ট্যাক টো') ||
+      lower.includes('tik tak toe')
+    ) {
+      this.isThinking = false;
+      gameEngine.startGame('TIC_TAC_TOE');
+      const reply = "Starting Tic-Tac-Toe directly on my OLED screen! Say a number 1 to 9 for your move.";
+      this.appendTaraReply(reply, 'excited');
+      return reply;
+    }
+    if (
+      lower.includes('play rock paper scissors') ||
+      lower.includes('rock paper scissors') ||
+      lower.includes('পাথর কাগজ কাঁচি') ||
+      lower.includes('stone paper scissor')
+    ) {
+      this.isThinking = false;
+      gameEngine.startGame('ROCK_PAPER_SCISSORS');
+      const reply = "Rock, Paper, Scissors loaded! Say rock, paper, or scissors!";
+      this.appendTaraReply(reply, 'excited');
+      return reply;
+    }
+    if (lower.includes('guess the number') || lower.includes('guess number') || lower.includes('সংখ্যা অনুমান')) {
+      this.isThinking = false;
+      gameEngine.startGame('GUESS_NUMBER');
+      const reply = "Guess the Number started! I picked a number from 1 to 100. What's your first guess?";
+      this.appendTaraReply(reply, 'curious');
+      return reply;
+    }
+    if (lower.includes('higher lower') || lower.includes('higher or lower')) {
+      this.isThinking = false;
+      gameEngine.startGame('HIGHER_LOWER');
+      const reply = "Higher or Lower loaded on display! Predict if the next number will be higher or lower!";
+      this.appendTaraReply(reply, 'curious');
+      return reply;
+    }
+    if (lower.includes('memory match') || lower.includes('memory game') || lower.includes('মেমোরি')) {
+      this.isThinking = false;
+      gameEngine.startGame('MEMORY_MATCH');
+      const reply = "Memory Match loaded! Pick two cards by saying numbers from 1 to 12!";
+      this.appendTaraReply(reply, 'happy');
+      return reply;
+    }
+    if (lower.includes('connect four') || lower.includes('connect 4') || lower.includes('কানেক্ট ফোর')) {
+      this.isThinking = false;
+      gameEngine.startGame('CONNECT_FOUR');
+      const reply = "Connect Four launched! Say a column from 1 to 7 to drop your disc.";
+      this.appendTaraReply(reply, 'excited');
+      return reply;
+    }
+    if (lower.includes('dice game') || lower.includes('roll dice') || lower.includes('ডাইস')) {
+      this.isThinking = false;
+      gameEngine.startGame('DICE_GAME');
+      const reply = "Dice Duel ready! Say 'Roll' to throw your dice!";
+      this.appendTaraReply(reply, 'excited');
+      return reply;
+    }
+    if (lower.includes('reaction game') || lower.includes('reflex game') || lower.includes('reaction test')) {
+      this.isThinking = false;
+      gameEngine.startGame('REACTION');
+      const reply = "Reaction Game starting! Wait for the visual signal, then shout 'GO'!";
+      this.appendTaraReply(reply, 'excited');
+      return reply;
+    }
+    if (lower.includes('simon says') || lower.includes('সাইমন সেস')) {
+      this.isThinking = false;
+      gameEngine.startGame('SIMON_SAYS');
+      const reply = "Simon Says active! Only follow commands when Simon says!";
+      this.appendTaraReply(reply, 'excited');
+      return reply;
+    }
+    if (
+      lower.includes('play game') ||
+      lower.includes('play a game') ||
+      lower.includes('let us play') ||
+      lower.includes("let's play") ||
+      lower.includes('খেলব') ||
+      lower.includes('খেলা')
+    ) {
+      this.isThinking = false;
+      gameEngine.startInvitation();
+      const reply = "I would love to play! Check my OLED screen or say yes!";
+      this.appendTaraReply(reply, 'excited');
+      return reply;
+    }
+
     // 1. Compliment & Affection Intent -> Trigger SHY BEHAVIOR SYSTEM
     if (personalityEngine.isCompliment(trimmed)) {
       this.isThinking = false;
@@ -206,9 +309,6 @@ export class ApiService {
       this.appendTaraReply(shyReply, 'shy');
       return shyReply;
     }
-
-    // Command Intent Detection
-    const lower = trimmed.toLowerCase();
 
     // 2. Time & Date Queries
     if (

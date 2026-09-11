@@ -10,6 +10,7 @@ import { activitySceneManager } from '../ActivitySceneManager';
 import { animationCoordinator } from '../AnimationCoordinator';
 import { armController } from '../ArmController';
 import { gameManager } from '../GameManager';
+import { gameEngine } from '../games/GameEngine';
 import { musicManager } from '../MusicManager';
 import { personalityEngine } from '../PersonalityEngine';
 import { voiceManager } from '../VoiceManager';
@@ -189,6 +190,9 @@ export class ActivityStateMachine {
     if (previousAct === 'MUSIC') {
       musicManager.stop();
     }
+    if (previousAct === 'GAMING' && gameEngine.isInvitationActive()) {
+      gameEngine.dismissInvitation();
+    }
 
     this.currentActivity = 'IDLE';
     this.state = 'IDLE';
@@ -268,6 +272,9 @@ export class ActivityStateMachine {
       case 'GAMING':
         animationCoordinator.setExpression('playful');
         armController.setGesture('PLAYING');
+        if (gameEngine.getActiveGame() === 'NONE' && !gameEngine.isInvitationActive()) {
+          gameEngine.startInvitation();
+        }
         break;
 
       case 'OBSERVING':

@@ -780,5 +780,152 @@ bool AuthManager::factoryReset(const char* token, const char* confirmChallenge) 
 }
 `,
   },
+  {
+    path: 'firmware/src/games/DirectGameEngine.h',
+    name: 'DirectGameEngine.h',
+    category: 'Display Games Engine',
+    code: `/*
+ * DirectGameEngine.h - Direct OLED Screen Gaming for TARA (ESP32-S3)
+ * Target Display: SSD1306 / SH1106 128x64 Monochrome I2C OLED
+ *
+ * All game state and vector graphics render locally on TARA's screen.
+ * Voice parser processes English & Bangla voice tokens from I2S mic.
+ */
+
+#ifndef TARA_DIRECT_GAME_ENGINE_H
+#define TARA_DIRECT_GAME_ENGINE_H
+
+#include <Arduino.h>
+#include <Adafruit_SSD1306.h>
+
+enum TaraDirectGame {
+  GAME_NONE = 0,
+  GAME_TIC_TAC_TOE,
+  GAME_ROCK_PAPER_SCISSORS,
+  GAME_GUESS_NUMBER,
+  GAME_HIGHER_LOWER,
+  GAME_CONNECT_FOUR,
+  GAME_DICE_DUEL
+};
+
+class DirectGameEngine {
+private:
+  TaraDirectGame activeGame = GAME_NONE;
+  char tttBoard[9]; // 'X', 'O', or ' '
+  uint8_t tttTurn;  // 0: Player (X), 1: TARA (O)
+  int playerScore = 0;
+  int taraScore = 0;
+  char statusMsg[32];
+
+public:
+  DirectGameEngine() {
+    memset(tttBoard, ' ', sizeof(tttBoard));
+    tttTurn = 0;
+    strcpy(statusMsg, "Ready to Play");
+  }
+
+  void startTicTacToe() {
+    activeGame = GAME_TIC_TAC_TOE;
+    memset(tttBoard, ' ', sizeof(tttBoard));
+    tttTurn = 0;
+    strcpy(statusMsg, "YOU: X (SAY 1-9)");
+  }
+
+  void handleVoiceCommand(const char* transcript) {
+    if (activeGame == GAME_TIC_TAC_TOE) {
+      int cell = parseNumber(transcript);
+      if (cell >= 1 && cell <= 9 && tttBoard[cell - 1] == ' ') {
+        tttBoard[cell - 1] = 'X';
+        if (checkWin('X')) {
+          playerScore += 50;
+          strcpy(statusMsg, "YOU WIN!");
+        } else {
+          executeTaraMove();
+        }
+      }
+    }
+  }
+
+  void render(Adafruit_SSD1306* display) {
+    if (activeGame == GAME_NONE) return;
+
+    display->clearDisplay();
+    display->setTextSize(1);
+    display->setTextColor(SSD1306_WHITE);
+
+    // Title bar
+    display->setCursor(2, 2);
+    display->print("TARA: ");
+    display->print(statusMsg);
+
+    if (activeGame == GAME_TIC_TAC_TOE) {
+      // Draw 3x3 Grid
+      int ox = 44, oy = 16, sz = 14;
+      display->drawFastVLine(ox + sz, oy, sz * 3, SSD1306_WHITE);
+      display->drawFastVLine(ox + sz * 2, oy, sz * 3, SSD1306_WHITE);
+      display->drawFastHLine(ox, oy + sz, sz * 3, SSD1306_WHITE);
+      display->drawFastHLine(ox, oy + sz * 2, sz * 3, SSD1306_WHITE);
+
+      for (int i = 0; i < 9; i++) {
+        int r = i / 3;
+        int c = i % 3;
+        if (tttBoard[i] != ' ') {
+          display->setCursor(ox + c * sz + 4, oy + r * sz + 3);
+          display->print(tttBoard[i]);
+        }
+      }
+    }
+
+    display->display();
+  }
+
+private:
+  int parseNumber(const char* text) {
+    if (strstr(text, "1") || strstr(text, "one") || strstr(text, "এক")) return 1;
+    if (strstr(text, "2") || strstr(text, "two") || strstr(text, "দুই")) return 2;
+    if (strstr(text, "3") || strstr(text, "three") || strstr(text, "তিন")) return 3;
+    if (strstr(text, "4") || strstr(text, "four") || strstr(text, "চার")) return 4;
+    if (strstr(text, "5") || strstr(text, "five") || strstr(text, "পাঁচ")) return 5;
+    if (strstr(text, "6") || strstr(text, "six") || strstr(text, "ছয়")) return 6;
+    if (strstr(text, "7") || strstr(text, "seven") || strstr(text, "সাত")) return 7;
+    if (strstr(text, "8") || strstr(text, "eight") || strstr(text, "আট")) return 8;
+    if (strstr(text, "9") || strstr(text, "nine") || strstr(text, "নয়")) return 9;
+    return -1;
+  }
+
+  void executeTaraMove() {
+    for (int i = 0; i < 9; i++) {
+      if (tttBoard[i] == ' ') {
+        tttBoard[i] = 'O';
+        if (checkWin('O')) {
+          taraScore += 50;
+          strcpy(statusMsg, "TARA WINS!");
+        } else {
+          strcpy(statusMsg, "YOUR TURN");
+        }
+        return;
+      }
+    }
+    strcpy(statusMsg, "DRAW GAME!");
+  }
+
+  bool checkWin(char mark) {
+    const int wins[8][3] = {
+      {0,1,2}, {3,4,5}, {6,7,8},
+      {0,3,6}, {1,4,7}, {2,5,8},
+      {0,4,8}, {2,4,6}
+    };
+    for (int i = 0; i < 8; i++) {
+      if (tttBoard[wins[i][0]] == mark &&
+          tttBoard[wins[i][1]] == mark &&
+          tttBoard[wins[i][2]] == mark) return true;
+    }
+    return false;
+  }
+};
+
+#endif // TARA_DIRECT_GAME_ENGINE_H
+`,
+  },
 ];
 

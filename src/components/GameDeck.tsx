@@ -28,6 +28,7 @@ import {
 } from 'lucide-react';
 import { gameManager, MemoryCard } from '../services/GameManager';
 import { TaraArmGesture } from '../types';
+import { DirectDisplayGameController } from './DirectDisplayGameController';
 
 export const GameDeck: React.FC = () => {
   const [activeGame, setActiveGame] = useState(gameManager.getActiveGame());
@@ -116,8 +117,12 @@ export const GameDeck: React.FC = () => {
   };
 
   return (
-    <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 text-slate-100 flex flex-col gap-4">
-      {/* Header */}
+    <div className="space-y-6">
+      {/* DIRECT-DISPLAY OLED GAME SYSTEM */}
+      <DirectDisplayGameController />
+
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 p-5 text-slate-100 flex flex-col gap-4">
+        {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
         <div className="flex items-center gap-2.5">
           <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 border border-amber-500/30">
@@ -628,6 +633,7 @@ export const GameDeck: React.FC = () => {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 };
