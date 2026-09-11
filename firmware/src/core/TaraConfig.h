@@ -24,11 +24,16 @@ struct BrainConfig {
 
 struct VoiceConfig {
     char ttsEndpoint[128]; // e.g. gTTS proxy or direct gTTS service
-    char ttsLanguage[8];   // e.g. "en", "es", "ja"
+    char ttsLanguage[8];   // e.g. "en", "es", "ja", "bn"
+    char sttEndpoint[128]; // STT cloud endpoint (e.g. Google Speech-to-Text / Whisper / proxy)
+    char sttLanguage[12];  // e.g. "en-US", "bn-BD"
     uint8_t volume;        // 0 - 100
     uint16_t sampleRate;   // default 16000
     bool micEnabled;
     bool speakerEnabled;
+    uint16_t vadThreshold; // Speech RMS threshold (default 1200)
+    uint16_t silenceTimeoutMs; // Silence timeout to conclude speech (default 1200ms)
+    uint16_t maxRecordingMs;   // Max recording duration (default 4500ms)
 };
 
 struct PersonalityConfig {

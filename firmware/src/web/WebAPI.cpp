@@ -152,6 +152,24 @@ void WebAPI::registerRoutes() {
     server->on("/api/voice", HTTP_POST, [this]() { handlePostVoice(); });
     server->on("/api/voice", HTTP_OPTIONS, handleOptions);
 
+    server->on("/api/voice/listen", HTTP_POST, [this]() { handlePostListen(); });
+    server->on("/api/voice/listen", HTTP_OPTIONS, handleOptions);
+
+    server->on("/api/audio/diagnostics", HTTP_GET, [this]() { handleGetAudioDiagnostics(); });
+    server->on("/api/audio/diagnostics", HTTP_OPTIONS, handleOptions);
+
+    server->on("/api/hardware/test/microphone", HTTP_POST, [this]() { handlePostTestMicrophone(); });
+    server->on("/api/hardware/test/microphone", HTTP_OPTIONS, handleOptions);
+
+    server->on("/api/hardware/test/speaker", HTTP_POST, [this]() { handlePostTestSpeaker(); });
+    server->on("/api/hardware/test/speaker", HTTP_OPTIONS, handleOptions);
+
+    server->on("/api/hardware/test/tts", HTTP_POST, [this]() { handlePostTestTTS(); });
+    server->on("/api/hardware/test/tts", HTTP_OPTIONS, handleOptions);
+
+    server->on("/api/hardware/test/stt", HTTP_POST, [this]() { handlePostTestSTT(); });
+    server->on("/api/hardware/test/stt", HTTP_OPTIONS, handleOptions);
+
     server->on("/api/personality", HTTP_GET, [this]() { handleGetPersonality(); });
     server->on("/api/personality", HTTP_POST, [this]() { handlePostPersonality(); });
     server->on("/api/personality", HTTP_OPTIONS, handleOptions);
@@ -411,10 +429,17 @@ void WebAPI::handleGetVoice() {
     if (!checkAuthentication()) return;
     VoiceConfig cfg = core->getVoice()->getConfig();
     String json = "{";
-    json += "\"tts_engine\":\"" + String(cfg.ttsEngine) + "\",";
-    json += "\"language\":\"" + String(cfg.language) + "\",";
+    json += "\"tts_endpoint\":\"" + String(cfg.ttsEndpoint) + "\",";
+    json += "\"tts_language\":\"" + String(cfg.ttsLanguage) + "\",";
+    json += "\"stt_endpoint\":\"" + String(cfg.sttEndpoint) + "\",";
+    json += "\"stt_language\":\"" + String(cfg.sttLanguage) + "\",";
     json += "\"volume\":" + String(cfg.volume) + ",";
-    json += "\"rate\":" + String(cfg.rate, 2);
+    json += "\"sample_rate\":" + String(cfg.sampleRate) + ",";
+    json += "\"mic_enabled\":" + String(cfg.micEnabled ? "true" : "false") + ",";
+    json += "\"speaker_enabled\":" + String(cfg.speakerEnabled ? "true" : "false") + ",";
+    json += "\"vad_threshold\":" + String(cfg.vadThreshold) + ",";
+    json += "\"silence_timeout_ms\":" + String(cfg.silenceTimeoutMs) + ",";
+    json += "\"max_recording_ms\":" + String(cfg.maxRecordingMs);
     json += "}";
     sendJson(200, json, true);
 }
@@ -426,20 +451,140 @@ void WebAPI::handlePostVoice() {
         return;
     }
     String body = server->arg("plain");
-    if (!validatePayloadLength(body, 512)) return;
+    if (!validatePayloadLength(body, 1024)) return;
 
     VoiceConfig cfg = core->getVoice()->getConfig();
+    String ttsEp = parseJsonField(body, "tts_endpoint");
+    String ttsLang = parseJsonField(body, "tts_language");
+    String sttEp = parseJsonField(body, "stt_endpoint");
+    String sttLang = parseJsonField(body, "stt_language");
     String vol = parseJsonField(body, "volume");
-    String lang = parseJsonField(body, "language");
+    String vadTh = parseJsonField(body, "vad_threshold");
+    String silTo = parseJsonField(body, "silence_timeout_ms");
+    String maxRec = parseJsonField(body, "max_recording_ms");
+
+    if (ttsEp.length() > 0) {
+        EndpointValidationResult val = EndpointValidator::validate(ModelProviderType::CUSTOM, ttsEp, true);
+        if (!val.valid) {
+            sendJson(400, "{\"error\":\"Invalid TTS endpoint: " + val.rejectionReason + "\"}", true);
+            return;
+        }
+        strncpy(cfg.ttsEndpoint, val.sanitizedUrl.c_str(), sizeof(cfg.ttsEndpoint) - 1);
+    }
+
+    if (sttEp.length() > 0) {
+        EndpointValidationResult val = EndpointValidator::validate(ModelProviderType::CUSTOM, sttEp, true);
+        if (!val.valid) {
+            sendJson(400, "{\"error\":\"Invalid STT endpoint: " + val.rejectionReason + "\"}", true);
+            return;
+        }
+        strncpy(cfg.sttEndpoint, val.sanitizedUrl.c_str(), sizeof(cfg.sttEndpoint) - 1);
+    }
+
+    if (ttsLang.length() > 0 && ttsLang.length() < 8) {
+        strncpy(cfg.ttsLanguage, ttsLang.c_str(), sizeof(cfg.ttsLanguage) - 1);
+    }
+
+    if (sttLang.length() > 0 && sttLang.length() < 12) {
+        strncpy(cfg.sttLanguage, sttLang.c_str(), sizeof(cfg.sttLanguage) - 1);
+    }
+
     if (vol.length() > 0) {
         int v = vol.toInt();
         if (v >= 0 && v <= 100) cfg.volume = v;
     }
-    if (lang.length() > 0 && lang.length() < 8) {
-        strncpy(cfg.language, lang.c_str(), sizeof(cfg.language) - 1);
+
+    if (vadTh.length() > 0) {
+        int th = vadTh.toInt();
+        if (th >= 100 && th <= 10000) cfg.vadThreshold = th;
     }
-    core->getVoice()->setConfig(cfg);
+
+    if (silTo.length() > 0) {
+        int st = silTo.toInt();
+        if (st >= 300 && st <= 5000) cfg.silenceTimeoutMs = st;
+    }
+
+    if (maxRec.length() > 0) {
+        int mr = maxRec.toInt();
+        if (mr >= 1000 && mr <= 15000) cfg.maxRecordingMs = mr;
+    }
+
+    cfg.micEnabled = parseJsonBool(body, "mic_enabled", cfg.micEnabled);
+    cfg.speakerEnabled = parseJsonBool(body, "speaker_enabled", cfg.speakerEnabled);
+
+    core->getVoice()->updateConfig(cfg);
+    core->getSecurityLogger()->logEvent(SecurityEventType::CONFIG_CHANGED, getClientIP(), "Voice configuration updated");
     sendJson(200, "{\"status\":\"ok\"}", true);
+}
+
+void WebAPI::handleGetAudioDiagnostics() {
+    if (!checkAuthentication()) return;
+    String diagJson = core->getVoice()->getAudioDiagnosticsJson();
+    sendJson(200, diagJson, true);
+}
+
+void WebAPI::handlePostListen() {
+    if (!checkAuthentication()) return;
+    String action = "start";
+    if (server->hasArg("plain")) {
+        String body = server->arg("plain");
+        String a = parseJsonField(body, "action");
+        if (a.length() > 0) action = a;
+    }
+
+    if (action == "stop") {
+        core->getVoice()->stopListening();
+        sendJson(200, "{\"status\":\"ok\",\"listening\":false}", true);
+    } else {
+        core->getVoice()->startListening();
+        sendJson(200, "{\"status\":\"ok\",\"listening\":true}", true);
+    }
+}
+
+void WebAPI::handlePostTestMicrophone() {
+    if (!checkAuthentication()) return;
+    float rms = 0.0f;
+    int16_t peak = 0;
+    bool ok = core->getVoice()->testMicrophone(1000, rms, peak);
+    String json = "{";
+    json += "\"status\":\"" + String(ok ? "ok" : "error") + "\",";
+    json += "\"samples_read\":" + String(ok ? 16000 : 0) + ",";
+    json += "\"rms\":" + String(rms, 2) + ",";
+    json += "\"peak\":" + String(peak);
+    json += "}";
+    sendJson(ok ? 200 : 500, json, true);
+}
+
+void WebAPI::handlePostTestSpeaker() {
+    if (!checkAuthentication()) return;
+    bool ok = core->getVoice()->testSpeaker(1000, 250);
+    sendJson(ok ? 200 : 500, "{\"status\":\"" + String(ok ? "ok" : "error") + "\",\"tone_hz\":1000,\"duration_ms\":250}", true);
+}
+
+void WebAPI::handlePostTestTTS() {
+    if (!checkAuthentication()) return;
+    String testText = "TARA real audio pipeline operational.";
+    if (server->hasArg("plain")) {
+        String body = server->arg("plain");
+        String t = parseJsonField(body, "text");
+        if (t.length() > 0) testText = t;
+    }
+    bool ok = core->getVoice()->testTTS(testText.c_str());
+    sendJson(ok ? 200 : 500, "{\"status\":\"" + String(ok ? "ok" : "error") + "\",\"text\":\"" + testText + "\"}", true);
+}
+
+void WebAPI::handlePostTestSTT() {
+    if (!checkAuthentication()) return;
+    STTResult res = core->getVoice()->testSTT(3000);
+    String json = "{";
+    json += "\"status\":\"" + String(res.success ? "ok" : "error") + "\",";
+    json += "\"success\":" + String(res.success ? "true" : "false") + ",";
+    json += "\"transcript\":\"" + res.transcript + "\",";
+    json += "\"confidence\":" + String(res.confidence, 2) + ",";
+    json += "\"error_code\":\"" + res.errorCode + "\",";
+    json += "\"error_message\":\"" + res.errorMessage + "\"";
+    json += "}";
+    sendJson(res.success ? 200 : 400, json, true);
 }
 
 void WebAPI::handleGetPersonality() {

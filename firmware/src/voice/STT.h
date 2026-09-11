@@ -5,38 +5,61 @@
 
 class AudioHardware;
 
+enum class STTState : uint8_t {
+    IDLE = 0,
+    LISTENING,
+    RECORDING,
+    PROCESSING,
+    COMPLETED,
+    ERROR
+};
+
+const char* sttStateToString(STTState state);
+
 struct STTResult {
     bool success;
     String transcript;
     float confidence;
+    String errorCode;
     String errorMessage;
 };
 
-class STTProvider {
+class ISTTProvider {
 public:
-    virtual ~STTProvider() {}
+    virtual ~ISTTProvider() {}
     virtual bool begin() = 0;
     virtual void startListening() = 0;
     virtual void stopListening() = 0;
     virtual bool isListening() const = 0;
-    virtual STTResult processAudio() = 0;
+    virtual STTResult processAudio(const int16_t* pcmBuffer, size_t sampleCount, uint32_t sampleRate = 16000, const char* language = "en-US") = 0;
+    virtual STTState getState() const = 0;
+    virtual const char* getName() const = 0;
 };
 
-class CloudSTTProvider : public STTProvider {
+// Real Cloud-based Speech-to-Text Provider
+class CloudSTTProvider : public ISTTProvider {
 public:
-    CloudSTTProvider(AudioHardware* audioHw);
+    CloudSTTProvider(AudioHardware* audioHw, const char* endpoint = nullptr);
     virtual ~CloudSTTProvider();
 
     bool begin() override;
     void startListening() override;
     void stopListening() override;
-    bool isListening() const override { return listening; }
-    STTResult processAudio() override;
+    bool isListening() const override { return state == STTState::LISTENING || state == STTState::RECORDING; }
+    STTResult processAudio(const int16_t* pcmBuffer, size_t sampleCount, uint32_t sampleRate = 16000, const char* language = "en-US") override;
+    STTState getState() const override { return state; }
+    const char* getName() const override { return "CloudSTTProvider"; }
+
+    void setEndpoint(const char* url);
+    void setApiKey(const char* key);
 
 private:
     AudioHardware* audio;
-    bool listening;
-    uint32_t listeningStartMs;
+    STTState state;
+    char sttEndpoint[128];
+    char apiKey[96];
+
+    STTResult parseCloudResponse(int httpCode, const String& responseBody);
 };
 
 #endif // TARA_STT_H

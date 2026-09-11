@@ -102,6 +102,23 @@ bool TaraCore::begin() {
     // 6. Voice & Brain
     voice = new VoiceManager(storage, &sAudioHardware);
     voice->begin();
+    voice->setFaceManager(face);
+
+    voice->setTranscriptCallback([](const String& transcript, float confidence, void* ctx) {
+        TaraCore* self = (TaraCore*)ctx;
+        if (self && transcript.length() > 0) {
+            self->setState(RobotState::THINKING, "Processing user voice input");
+            if (self->getBrain()) {
+                String reply = self->getBrain()->processUserInput(transcript.c_str());
+                if (reply.length() > 0) {
+                    self->setState(RobotState::SPEAKING, "Replying to voice query");
+                    self->getVoice()->speak(reply.c_str());
+                } else {
+                    self->setState(RobotState::IDLE, "Brain reply empty");
+                }
+            }
+        }
+    }, this);
 
     brain = new Brain(storage, personality);
     brain->begin();
@@ -177,7 +194,10 @@ void TaraCore::update() {
     // 4. Update OLED Face Animation (at ~30 FPS)
     if (face) face->update();
 
-    // 5. Autonomous robot behaviors
+    // 5. Update Real Voice Pipeline (VAD, Mic capture, TTS queue streaming)
+    if (voice) voice->update();
+
+    // 6. Autonomous robot behaviors
     handleAutonomousBehaviors();
 }
 

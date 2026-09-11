@@ -26,6 +26,7 @@ public:
     void handleGetWiFi();
     void handleGetBrain();
     void handleGetVoice();
+    void handleGetAudioDiagnostics();
     void handleGetPersonality();
     void handleGetMemory();
     void handleGetHardware();
@@ -35,6 +36,11 @@ public:
     void handlePostWiFi();
     void handlePostBrain();
     void handlePostVoice();
+    void handlePostListen();
+    void handlePostTestMicrophone();
+    void handlePostTestSpeaker();
+    void handlePostTestTTS();
+    void handlePostTestSTT();
     void handlePostPersonality();
     void handlePostMemory();
     void handlePostRestart();

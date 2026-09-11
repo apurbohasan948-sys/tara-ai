@@ -92,16 +92,23 @@ bool StorageManager::saveBrainConfig(const BrainConfig& config) {
 bool StorageManager::loadVoiceConfig(VoiceConfig& config) {
     memset(&config, 0, sizeof(VoiceConfig));
     prefs.begin(PREF_NAMESPACE_SYS, true);
-    String ep   = prefs.getString("tts_ep", "https://translate.google.com/translate_tts");
-    String lang = prefs.getString("tts_lang", "en");
+    String ttsEp  = prefs.getString("tts_ep", "https://translate.google.com/translate_tts");
+    String ttsLng = prefs.getString("tts_lang", "en");
+    String sttEp  = prefs.getString("stt_ep", "https://speech.googleapis.com/v1/speech:recognize");
+    String sttLng = prefs.getString("stt_lang", "en-US");
     config.volume = prefs.getUChar("vol", 80);
     config.sampleRate = prefs.getUShort("srate", 16000);
     config.micEnabled = prefs.getBool("mic_on", true);
     config.speakerEnabled = prefs.getBool("spk_on", true);
+    config.vadThreshold = prefs.getUShort("vad_th", 1200);
+    config.silenceTimeoutMs = prefs.getUShort("sil_to", 1200);
+    config.maxRecordingMs = prefs.getUShort("max_rec", 4500);
     prefs.end();
 
-    strncpy(config.ttsEndpoint, ep.c_str(), sizeof(config.ttsEndpoint) - 1);
-    strncpy(config.ttsLanguage, lang.c_str(), sizeof(config.ttsLanguage) - 1);
+    strncpy(config.ttsEndpoint, ttsEp.c_str(), sizeof(config.ttsEndpoint) - 1);
+    strncpy(config.ttsLanguage, ttsLng.c_str(), sizeof(config.ttsLanguage) - 1);
+    strncpy(config.sttEndpoint, sttEp.c_str(), sizeof(config.sttEndpoint) - 1);
+    strncpy(config.sttLanguage, sttLng.c_str(), sizeof(config.sttLanguage) - 1);
     return true;
 }
 
@@ -109,10 +116,15 @@ bool StorageManager::saveVoiceConfig(const VoiceConfig& config) {
     prefs.begin(PREF_NAMESPACE_SYS, false);
     prefs.putString("tts_ep", config.ttsEndpoint);
     prefs.putString("tts_lang", config.ttsLanguage);
+    prefs.putString("stt_ep", config.sttEndpoint);
+    prefs.putString("stt_lang", config.sttLanguage);
     prefs.putUChar("vol", config.volume);
     prefs.putUShort("srate", config.sampleRate);
     prefs.putBool("mic_on", config.micEnabled);
     prefs.putBool("spk_on", config.speakerEnabled);
+    prefs.putUShort("vad_th", config.vadThreshold);
+    prefs.putUShort("sil_to", config.silenceTimeoutMs);
+    prefs.putUShort("max_rec", config.maxRecordingMs);
     prefs.end();
     return true;
 }

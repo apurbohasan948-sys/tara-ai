@@ -5,9 +5,14 @@
 FaceManager::FaceManager(DisplayDriver* displayDriver)
     : display(displayDriver),
       lastRenderMs(0),
-      notificationUntilMs(0) {
+      notificationUntilMs(0),
+      mouthAmplitude(0.0f) {
     notificationLine1[0] = '\0';
     notificationLine2[0] = '\0';
+}
+
+void FaceManager::setMouthAmplitude(float amplitude) {
+    mouthAmplitude = (amplitude > 1.0f) ? 1.0f : ((amplitude < 0.0f) ? 0.0f : amplitude);
 }
 
 bool FaceManager::begin() {
@@ -171,9 +176,21 @@ void FaceManager::renderFace() {
 
 void FaceManager::renderMouth(const FaceGeometry& geom) {
     if (!display) return;
-    int16_t mx = 64 - geom.mouthWidth / 2;
-    int16_t my = geom.mouthY;
-    display->fillRoundRect(mx, my, geom.mouthWidth, geom.mouthHeight, 3, 1);
+
+    int16_t w = geom.mouthWidth;
+    int16_t h = geom.mouthHeight;
+
+    // Dynamically modulate mouth aperture based on real audio amplitude envelope
+    if (mouthAmplitude > 0.05f) {
+        // Height expands from base 2px up to 14px; width widens up to +8px
+        h = (int16_t)(3 + mouthAmplitude * 11);
+        w = (int16_t)(geom.mouthWidth + mouthAmplitude * 8);
+    }
+
+    int16_t mx = 64 - w / 2;
+    int16_t my = geom.mouthY - (h / 2);
+    int16_t radius = (h > 4) ? 3 : 1;
+    display->fillRoundRect(mx, my, w, h, radius, 1);
 }
 
 void FaceManager::renderNotification() {

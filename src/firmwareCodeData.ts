@@ -201,35 +201,131 @@ private:
     name: 'VoiceManager.h',
     category: 'Voice Pipeline',
     code: `/*
- * VoiceManager.h - Synchronized Voice Playback & Envelope Analyzer
- * Links speech audio amplitude to real-time mouth opening.
+ * VoiceManager.h - Production I2S Audio Pipeline & VAD/STT/TTS Manager
+ * Coordinates real microphone capture, Voice Activity Detection, cloud STT,
+ * streaming gTTS, MP3/WAV decoding, and real-time mouth amplitude synchronization.
  */
-#ifndef VOICE_MANAGER_H
-#define VOICE_MANAGER_H
+#ifndef TARA_VOICEMANAGER_H
+#define TARA_VOICEMANAGER_H
 
 #include <Arduino.h>
-#include "../../include/TaraCommon.h"
+#include "STT.h"
+#include "TTS.h"
+#include "VAD.h"
+#include "AudioBuffer.h"
+#include "AudioDecoder.h"
+#include "VoiceQueue.h"
+
+class StorageManager;
+class AudioHardware;
+class FaceManager;
 
 class VoiceManager {
 public:
-  VoiceManager();
-  void begin();
-  void update();
+    VoiceManager(StorageManager* storage, AudioHardware* audioHw);
+    bool begin();
+    void update();
 
-  void speak(const char* text);
-  void stop();
-  bool isSpeaking() const;
-  float getAmplitude() const;
+    void startListening();
+    void stopListening();
+    bool isListening() const;
 
-private:
-  bool _isPlaying;
-  float _amplitude;
-  float _smoothedAmp;
-  uint32_t _speechStartMs;
-  uint32_t _speechDurationMs;
+    bool speak(const char* text, const char* language = nullptr, uint8_t priority = 1, VoiceMode mode = VoiceMode::NORMAL_SPEECH);
+    void stopSpeaking();
+    bool isSpeaking() const;
+
+    void setVolume(uint8_t volume);
+    float getCurrentAmplitude() const;
+    void setFaceManager(FaceManager* faceMgr);
+
+    // Hardware Diagnostics
+    bool testMicrophone(uint16_t durationMs, float& outRms, int16_t& outPeak);
+    bool testSpeaker(uint16_t freqHz = 1000, uint16_t durationMs = 250);
+    bool testTTS(const char* testText);
+    STTResult testSTT(uint16_t recordMs = 3000);
+    String getAudioDiagnosticsJson() const;
 };
 
-#endif // VOICE_MANAGER_H
+#endif // TARA_VOICEMANAGER_H
+`,
+  },
+  {
+    path: 'firmware/src/voice/VAD.h',
+    name: 'VAD.h',
+    category: 'Voice Pipeline',
+    code: `/*
+ * VAD.h - Real-time Voice Activity Detection
+ * Computes RMS energy of incoming 16-bit PCM frames and drives the
+ * speech/silence state machine:
+ * IDLE -> LISTENING -> SPEECH_DETECTED -> RECORDING -> SILENCE_DETECTED
+ */
+#ifndef TARA_VAD_H
+#define TARA_VAD_H
+
+#include <Arduino.h>
+
+enum class VADState : uint8_t {
+    IDLE = 0,
+    LISTENING,
+    SPEECH_DETECTED,
+    RECORDING,
+    SILENCE_DETECTED,
+    PROCESSING,
+    TRANSCRIBED
+};
+
+struct VADConfig {
+    uint16_t speechThresholdRms;
+    uint16_t silenceThresholdRms;
+    uint16_t minSpeechMs;
+    uint16_t silenceTimeoutMs;
+    uint16_t maxRecordingMs;
+};
+
+class VADDetector {
+public:
+    VADDetector(const VADConfig& config = {1200, 600, 200, 1200, 4500});
+    void startListening();
+    void stop();
+    VADState processFrame(const int16_t* samples, size_t count, uint32_t sampleRate = 16000);
+    VADState getState() const;
+    float getCurrentRms() const;
+};
+
+#endif // TARA_VAD_H
+`,
+  },
+  {
+    path: 'firmware/src/voice/AudioDecoder.h',
+    name: 'AudioDecoder.h',
+    category: 'Voice Pipeline',
+    code: `/*
+ * AudioDecoder.h - Streaming Audio Decoder (WAV & MP3)
+ * Decodes streaming chunks, calculates live audio amplitude envelope,
+ * applies digital volume scaling, and writes PCM frames to AudioHardware.
+ */
+#ifndef TARA_AUDIODECODER_H
+#define TARA_AUDIODECODER_H
+
+#include <Arduino.h>
+
+class AudioHardware;
+
+typedef void (*AudioAmplitudeCallback)(float normalizedRms, void* userData);
+
+class AudioDecoder {
+public:
+    AudioDecoder(AudioHardware* hw);
+    bool begin();
+    void reset();
+    void setVolume(uint8_t volumePercent);
+    void setAmplitudeCallback(AudioAmplitudeCallback cb, void* userData);
+    size_t decodeAndPlayChunk(const uint8_t* encodedData, size_t len);
+    void finishStream();
+    float getLastRms() const;
+};
+
+#endif // TARA_AUDIODECODER_H
 `,
   },
   {

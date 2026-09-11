@@ -20,6 +20,10 @@ public:
 
     void showTextNotification(const char* line1, const char* line2 = nullptr, uint32_t durationMs = 2500);
 
+    // Dynamic mouth animation driven by real audio amplitude
+    void setMouthAmplitude(float amplitude);
+    float getMouthAmplitude() const { return mouthAmplitude; }
+
 private:
     DisplayDriver* display;
     AnimationController animation;
@@ -27,6 +31,7 @@ private:
     uint32_t notificationUntilMs;
     char notificationLine1[32];
     char notificationLine2[32];
+    float mouthAmplitude;
 
     void renderFace();
     void renderEye(int16_t cx, int16_t cy, const EyeParameters& eye, int16_t lookX, int16_t lookY);
